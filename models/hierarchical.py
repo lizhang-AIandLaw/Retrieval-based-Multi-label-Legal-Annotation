@@ -13,6 +13,15 @@ class HierarchicalClassifier(nn.Module):
             kwargs["attn_implementation"] = attn_implementation
             
         self.base_model = AutoModel.from_pretrained(base_model_name, **kwargs)
+        
+        # Apply LoRA to base model if configured (passed via kwargs/external config? 
+        # Ideally we should pass lora config to init)
+        # For simplicity in this project structure, we check if 'peft' is available and apply it here if requested
+        # But ModelConfig is not passed here. 
+        # We will assume if the user wants LoRA for hierarchical, they might need to handle it outside or pass a config object.
+        # Let's keep it simple: This class focuses on architecture. 
+        # If LoRA is needed, it's best applied to self.base_model AFTER init in train.py
+        
         self.config = self.base_model.config
         
         # Determine hidden size

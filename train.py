@@ -84,6 +84,28 @@ class ModelConfig:
         default=None,
         metadata={"help": "Attention implementation to use (e.g., 'flash_attention_2', 'eager', 'sdpa')."}
     )
+    
+    # LoRA arguments
+    use_lora: bool = field(
+        default=False,
+        metadata={"help": "Whether to use LoRA for training."}
+    )
+    lora_r: int = field(
+        default=8,
+        metadata={"help": "LoRA r value."}
+    )
+    lora_alpha: int = field(
+        default=16,
+        metadata={"help": "LoRA alpha value."}
+    )
+    lora_dropout: float = field(
+        default=0.05,
+        metadata={"help": "LoRA dropout value."}
+    )
+    lora_target_modules: List[str] = field(
+        default_factory=lambda: ["q_proj", "v_proj"],
+        metadata={"help": "List of module names to target for LoRA."}
+    )
 
 def multi_label_metrics(predictions, labels, threshold=0.5):
     # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
@@ -315,6 +337,34 @@ def main():
             attn_implementation=getattr(model_config, "attn_implementation", None)
         )
         
+        # Apply LoRA to the base model inside HierarchicalClassifier if enabled
+        if model_config.use_lora:
+            from peft import get_peft_model, LoraConfig, TaskType
+            logger.info(f"Applying LoRA to Hierarchical Base Model with r={model_config.lora_r}, alpha={model_config.lora_alpha}")
+            
+            # Note: For hierarchical, we are not using TaskType.SEQ_CLS because base model output is used as embedding features
+            # We treat it as FEATURE_EXTRACTION technically, but PEFT TaskType usually implies the head.
+            # Here we just want to LoRA the base_model.
+            # We can apply LoRA to model.base_model
+            
+            peft_config = LoraConfig(
+                inference_mode=False,
+                r=model_config.lora_r,
+                lora_alpha=model_config.lora_alpha,
+                lora_dropout=model_config.lora_dropout,
+                target_modules=model_config.lora_target_modules
+            )
+            model.base_model = get_peft_model(model.base_model, peft_config)
+            
+            # We need to make sure the rest of the model (transformer_encoder, classifier) is trainable.
+            # get_peft_model sets requires_grad=False for non-LoRA params of the wrapped module.
+            # But our transformer_encoder and classifier are outside base_model, so they remain trainable by default.
+            
+            # Print trainable params for verification
+            trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
+            all_params = sum(p.numel() for p in model.parameters())
+            logger.info(f"trainable params: {trainable_params} || all params: {all_params} || trainable%: {100 * trainable_params / all_params}")
+        
         # If loading from a locally saved hierarchical model, load state dict manually
         if os.path.isdir(base_model_name):
             weights_path = os.path.join(base_model_name, "pytorch_model.bin")
@@ -372,6 +422,22 @@ def main():
             model_path,
             **model_kwargs
         )
+        
+        # Apply LoRA if enabled
+        if model_config.use_lora:
+            from peft import get_peft_model, LoraConfig, TaskType
+            logger.info(f"Applying LoRA to model with r={model_config.lora_r}, alpha={model_config.lora_alpha}")
+            
+            peft_config = LoraConfig(
+                task_type=TaskType.SEQ_CLS,
+                inference_mode=False,
+                r=model_config.lora_r,
+                lora_alpha=model_config.lora_alpha,
+                lora_dropout=model_config.lora_dropout,
+                target_modules=model_config.lora_target_modules
+            )
+            model = get_peft_model(model, peft_config)
+            model.print_trainable_parameters()
 
     # Ensure model pad token id is set if needed (mostly for GPT models)
     if hasattr(model, "config") and model.config.pad_token_id is None:
