@@ -92,27 +92,14 @@ To use a trained model for prediction on a text string:
 python inference.py ./output/bert_ecthr_a "Your legal text here..."
 ```
 
-## Technical Implementation of Multi-Label Output
+## Technical Implementation: Guiding Models to Output Labels 0-9
 
-The project handles multi-label classification (0-9 classes) through the following pipeline:
+The models are guided to output labels 0-9 using a **Classification Head** and **BCE Loss**:
 
-1.  **Label Encoding**:
-    -   Raw integer labels (e.g., `[2, 5]`) are converted into **Multi-hot Vectors** (e.g., `[0, 0, 1, 0, 0, 1, 0...]`) during preprocessing.
-    -   This creates a target vector of length 10 (num_labels) with 1.0s at active indices.
-
-2.  **Model Architecture**:
-    -   **Legal-BERT**: Adds a linear classification head on top of the `[CLS]` token embedding.
-    -   **Qwen-Embedding**: Adds a linear classification head on top of the last token's hidden state.
-    -   Both project the latent representation to 10 logits.
-
-3.  **Loss Function**:
-    -   Uses **`BCEWithLogitsLoss`** (Binary Cross Entropy with Logits).
-    -   This treats the problem as 10 independent binary classification tasks.
-    -   It applies a Sigmoid activation internally to each logit before computing the loss against the multi-hot targets.
-
-4.  **Inference Thresholding**:
-    -   Output logits are passed through a **Sigmoid** function to get probabilities (0-1).
-    -   A threshold of **0.5** is applied: any class with probability ≥ 0.5 is predicted as present (output "1").
+1.  **Architecture**: A linear layer (head) is added on top of the model's final embedding. It maps the hidden state to **10 output logits**, representing classes 0-9.
+2.  **Training Target**: Raw labels (e.g., `[2, 5]`) are converted to a **Multi-hot Vector** (e.g., `[0, 0, 1, 0, 0, 1, 0, 0, 0, 0]`).
+3.  **Loss Function**: We use `BCEWithLogitsLoss`. It treats each of the 10 outputs as an independent binary classification problem (Is label 0 present? Is label 1 present? ...).
+4.  **Inference**: The model outputs logits. We apply **Sigmoid** to get probabilities and output any label with probability **> 0.5**.
 
 ## Notes on Input Strategies
 

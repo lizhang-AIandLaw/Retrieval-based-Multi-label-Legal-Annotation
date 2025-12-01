@@ -39,6 +39,7 @@
     "max_segment_length": 512,
     "report_to": "none",
     "push_to_hub": false,
-    "hub_strategy": "end"
+    "hub_strategy": "end",
+    "gradient_checkpointing": true
 }
 
