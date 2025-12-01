@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Evaluate BERT on Test Split
+# Evaluate BERT on Test Split (using local fine-tuned model)
 python train.py configs/bert_config.json \
     --model_name_or_path ./output/bert_ecthr_a \
     --do_train false \

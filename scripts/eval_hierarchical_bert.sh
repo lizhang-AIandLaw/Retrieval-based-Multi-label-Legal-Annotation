@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Evaluate Hierarchical BERT on Test Split
+# Evaluate Hierarchical BERT on Test Split (using local fine-tuned model)
 python train.py configs/hierarchical_bert_config.json \
     --model_name_or_path ./output/bert_hierarchical_ecthr_a \
     --do_train false \

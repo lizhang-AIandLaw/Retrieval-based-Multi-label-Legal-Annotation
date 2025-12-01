@@ -247,10 +247,33 @@ def main():
     if os.path.isdir(model_path) or model_path.startswith("./") or model_path.startswith("/"):
         model_path = os.path.abspath(model_path)
         
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_path,
-        trust_remote_code=model_config.trust_remote_code
-    )
+        # Check if path exists, if not, it might be a HF repo ID.
+        if not os.path.exists(model_path):
+             # Reset to original if local path doesn't exist (meaning it IS a repo ID or invalid path)
+             # But if user passed "./output/...", they intend local.
+             logger.warning(f"Local path {model_path} does not exist. Using original {model_config.model_name_or_path} as repo ID.")
+             model_path = model_config.model_name_or_path
+    
+    # Important: When loading from local directory, 'trust_remote_code' might still be passed.
+    # But for AutoTokenizer.from_pretrained with local directory, it should be fine.
+    # However, if the directory doesn't look like a model directory (missing config.json or tokenizer.json), 
+    # transformers might try to hit the hub.
+    
+    logger.info(f"Loading tokenizer from: {model_path}")
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_path,
+            trust_remote_code=model_config.trust_remote_code
+        )
+    except OSError:
+        # If loading from local failed, it might be because the directory is empty or invalid.
+        # In eval mode, this is critical.
+        if training_args.do_predict and not training_args.do_train:
+             logger.error(f"Could not load tokenizer from {model_path}. Ensure the model was trained and saved correctly.")
+             raise
+        # If training, maybe we want to fallback to the base model in config if local output dir is empty?
+        # But here model_path IS the one we want to use.
+        raise
     
     # Ensure padding token is set
     if tokenizer.pad_token is None:
@@ -297,8 +320,11 @@ def main():
         
         # Resolve path
         model_path = model_config.model_name_or_path
-        if os.path.isdir(model_path) or model_path.startswith("./"):
+        if os.path.isdir(model_path) or model_path.startswith("./") or model_path.startswith("/"):
             model_path = os.path.abspath(model_path)
+            if not os.path.exists(model_path):
+                 logger.warning(f"Local path {model_path} does not exist. Using original {model_config.model_name_or_path} as repo ID.")
+                 model_path = model_config.model_name_or_path
 
         config = AutoConfig.from_pretrained(
             model_path,

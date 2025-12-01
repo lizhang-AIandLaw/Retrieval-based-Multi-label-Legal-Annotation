@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Evaluate Qwen on Test Split
+# Evaluate Qwen on Test Split (using local fine-tuned model)
 python train.py configs/qwen_config.json \
     --model_name_or_path ./output/qwen_ecthr_a \
     --do_train false \
