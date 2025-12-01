@@ -436,6 +436,10 @@ def main():
     eval_dataset = processed_datasets["validation"]
     test_dataset = processed_datasets["test"]
 
+    # For multi-label classification with BCEWithLogitsLoss, labels must be float
+    # However, some versions of transformers/torch might default 'labels' to long if not careful.
+    # Let's inspect the model problem type and ensure compatibility.
+    
     # Data collator
     if model_config.hierarchical:
         # Default collator works for tensors if they are already uniform shape
@@ -443,6 +447,43 @@ def main():
         data_collator = DefaultDataCollator()
     else:
         data_collator = DataCollatorWithPadding(tokenizer=tokenizer, padding="longest")
+        
+    # Ensure labels are floats for BCEWithLogitsLoss in standard collator?
+    # DataCollatorWithPadding usually just pads. The type comes from dataset features.
+    # When we used `map`, new columns are inferred.
+    
+    # Explicitly set features of the processed dataset to ensure labels are float32?
+    # Or we can cast in compute_loss if needed, but Trainer handles it if problem_type is set.
+    # The error "RuntimeError: result type Float can't be cast to the desired output type Long"
+    # usually happens in BCEWithLogitsLoss when target (labels) is Long but input (logits) is Float, 
+    # OR if the loss calculation expects something else.
+    # Wait, BCEWithLogitsLoss expects BOTH to be Float.
+    # If target is Long, it fails.
+    
+    # Let's force the labels column in dataset to be float32.
+    try:
+        from datasets import Features, Sequence, Value
+        # We can't easily cast entire dataset features after map without full re-process or cast_column (which might not exist in all versions).
+        # But `preprocess_function` returns lists of floats: label_vec = [0.0] * num_labels.
+        # Python floats are double precision. Torch expects float32 usually.
+        pass
+    except ImportError:
+        pass
+    
+    # We can subclass DataCollatorWithPadding to force float labels
+    class DataCollatorWithPaddingAndFloatLabels(DataCollatorWithPadding):
+        def __call__(self, features):
+            batch = super().__call__(features)
+            if "labels" in batch:
+                batch["labels"] = batch["labels"].float()
+            return batch
+
+    if not model_config.hierarchical:
+         data_collator = DataCollatorWithPaddingAndFloatLabels(tokenizer=tokenizer, padding="longest")
+    
+    # Explicitly check for 'problem_type' in config and force it if possible
+    if hasattr(model, "config"):
+        model.config.problem_type = "multi_label_classification"
 
     trainer = Trainer(
         model=model,

@@ -102,6 +102,9 @@ class HierarchicalClassifier(nn.Module):
         loss = None
         if labels is not None:
             loss_fct = nn.BCEWithLogitsLoss()
+            # Ensure labels are float
+            if labels.dtype != torch.float32 and labels.dtype != torch.float16 and labels.dtype != torch.bfloat16:
+                labels = labels.float()
             loss = loss_fct(logits, labels)
             
         return SequenceClassifierOutput(
