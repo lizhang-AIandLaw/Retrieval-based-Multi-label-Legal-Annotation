@@ -13,7 +13,7 @@
     "gradient_accumulation_steps": 1,
     "learning_rate": 3e-5,
     "weight_decay": 0.01,
-    "num_train_epochs": 10,
+    "num_train_epochs": 4,
     "lr_scheduler_type": "linear",
     "warmup_ratio": 0.1,
     "eval_strategy": "epoch",
