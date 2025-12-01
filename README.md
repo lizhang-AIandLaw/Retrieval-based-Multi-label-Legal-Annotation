@@ -92,19 +92,27 @@ To use a trained model for prediction on a text string:
 python inference.py ./output/bert_ecthr_a "Your legal text here..."
 ```
 
-## How Models Output Labels (0-9)
+## Technical Implementation of Multi-Label Output
 
-The models are adapted for multi-label classification to output probabilities for 10 specific classes (Articles of ECHR):
+The project handles multi-label classification (0-9 classes) through the following pipeline:
 
-1.  **Legal-BERT (`BertForSequenceClassification`)**:
-    -   A linear classification head is added on top of the `[CLS]` token embedding.
-    -   It projects the 768-dim vector to 10 logits.
+1.  **Label Encoding**:
+    -   Raw integer labels (e.g., `[2, 5]`) are converted into **Multi-hot Vectors** (e.g., `[0, 0, 1, 0, 0, 1, 0...]`) during preprocessing.
+    -   This creates a target vector of length 10 (num_labels) with 1.0s at active indices.
 
-2.  **Qwen-Embedding (`Qwen2ForSequenceClassification`)**:
-    -   Transformers library automatically adds a classification head (linear layer) on top of the last token's hidden state.
-    -   It projects the hidden vector (e.g., 1024-dim) to 10 logits.
+2.  **Model Architecture**:
+    -   **Legal-BERT**: Adds a linear classification head on top of the `[CLS]` token embedding.
+    -   **Qwen-Embedding**: Adds a linear classification head on top of the last token's hidden state.
+    -   Both project the latent representation to 10 logits.
 
-In both cases, the output logits are passed through a **Sigmoid** activation function. Any class with probability > 0.5 is considered a positive prediction (output "1" in the multi-hot vector).
+3.  **Loss Function**:
+    -   Uses **`BCEWithLogitsLoss`** (Binary Cross Entropy with Logits).
+    -   This treats the problem as 10 independent binary classification tasks.
+    -   It applies a Sigmoid activation internally to each logit before computing the loss against the multi-hot targets.
+
+4.  **Inference Thresholding**:
+    -   Output logits are passed through a **Sigmoid** function to get probabilities (0-1).
+    -   A threshold of **0.5** is applied: any class with probability ≥ 0.5 is predicted as present (output "1").
 
 ## Notes on Input Strategies
 
@@ -116,3 +124,8 @@ In both cases, the output logits are passed through a **Sigmoid** activation fun
 - **Hierarchical BERT**: Documents are split into up to 32 segments of 128 tokens each.
 - **Hierarchical Qwen**: Documents are split into up to 16 segments of 512 tokens each.
 - This architecture allows the models to process documents far longer than their native context windows.
+
+## Models Details
+
+- **Legal-BERT**: A specialized BERT model pre-trained on legal text, used here as the segment encoder in the hierarchical setup.
+- **Qwen-Embedding**: A decoder-based embedding model. In the hierarchical setup, it functions as a powerful feature extractor for each segment, proving its versatility as a "first layer" encoder despite its decoder architecture.
