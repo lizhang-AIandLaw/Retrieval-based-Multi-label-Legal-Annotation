@@ -4,11 +4,15 @@ from transformers import AutoModel, PreTrainedModel, AutoConfig
 from transformers.modeling_outputs import SequenceClassifierOutput
 
 class HierarchicalClassifier(nn.Module):
-    def __init__(self, base_model_name, num_labels, num_layers=2, nhead=8, dim_feedforward=2048, dropout=0.1, trust_remote_code=True):
+    def __init__(self, base_model_name, num_labels, num_layers=2, nhead=8, dim_feedforward=2048, dropout=0.1, trust_remote_code=True, attn_implementation=None):
         super().__init__()
         
         # Load base model
-        self.base_model = AutoModel.from_pretrained(base_model_name, trust_remote_code=trust_remote_code)
+        kwargs = {"trust_remote_code": trust_remote_code}
+        if attn_implementation:
+            kwargs["attn_implementation"] = attn_implementation
+            
+        self.base_model = AutoModel.from_pretrained(base_model_name, **kwargs)
         self.config = self.base_model.config
         
         # Determine hidden size

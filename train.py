@@ -80,6 +80,10 @@ class ModelConfig:
         default=128,
         metadata={"help": "Maximum length of each segment for hierarchical model."}
     )
+    attn_implementation: str = field(
+        default=None,
+        metadata={"help": "Attention implementation to use (e.g., 'flash_attention_2', 'eager', 'sdpa')."}
+    )
 
 def multi_label_metrics(predictions, labels, threshold=0.5):
     # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
@@ -293,6 +297,13 @@ def main():
         if os.path.isdir(base_model_name) or base_model_name.startswith("./"):
             base_model_name = os.path.abspath(base_model_name)
 
+        # Explicitly set Flash Attention if specified in config
+        model_kwargs = {}
+        if hasattr(model_config, "attn_implementation"):
+             # Not all models support this kwarg in from_pretrained, but AutoModel does for recent versions.
+             # HierarchicalClassifier will pass it to base_model.
+             pass 
+             
         model = HierarchicalClassifier(
             base_model_name=base_model_name,
             num_labels=num_labels,
@@ -300,7 +311,8 @@ def main():
             # Pass hierarchical params from config
             num_layers=2, # default in class, but could be in config
             nhead=8,
-            dim_feedforward=2048
+            dim_feedforward=2048,
+            attn_implementation=getattr(model_config, "attn_implementation", None)
         )
         
         # If loading from a locally saved hierarchical model, load state dict manually
@@ -333,11 +345,32 @@ def main():
             trust_remote_code=model_config.trust_remote_code,
         )
         
+        # Prepare kwargs for Flash Attention
+        model_kwargs = {
+            "config": config,
+            "trust_remote_code": model_config.trust_remote_code,
+            "ignore_mismatched_sizes": model_config.ignore_mismatched_sizes
+        }
+        
+        # Manually check for Flash Attention config from JSON parser results (model_config)
+        # ModelConfig dataclass doesn't have attn_implementation field by default, 
+        # but we might have added it or we can check training_args?
+        # Actually, HfArgumentParser parses config file into dataclass fields.
+        # If 'attn_implementation' is in json but not in ModelConfig class, it might be lost or put in unused args?
+        # Let's add it to ModelConfig or check if we can retrieve it.
+        # Better: Add 'attn_implementation' to ModelConfig dataclass.
+        
+        if hasattr(model_config, "attn_implementation") and model_config.attn_implementation:
+             model_kwargs["attn_implementation"] = model_config.attn_implementation
+             logger.info(f"Using attention implementation: {model_config.attn_implementation}")
+        
+        if hasattr(model_config, "torch_dtype"):
+             # This field might not exist in ModelConfig yet.
+             pass
+
         model = AutoModelForSequenceClassification.from_pretrained(
             model_path,
-            config=config,
-            trust_remote_code=model_config.trust_remote_code,
-            ignore_mismatched_sizes=model_config.ignore_mismatched_sizes
+            **model_kwargs
         )
 
     # Ensure model pad token id is set if needed (mostly for GPT models)
