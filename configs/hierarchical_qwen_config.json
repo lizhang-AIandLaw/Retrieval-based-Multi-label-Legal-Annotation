@@ -30,7 +30,7 @@
     "max_segments": 16,
     "max_segment_length": 512,
     "report_to": "wandb",
-    "push_to_hub": true,
+    "push_to_hub": false,
     "hub_strategy": "end"
 }
 

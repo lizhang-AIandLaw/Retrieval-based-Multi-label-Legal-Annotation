@@ -1,5 +1,5 @@
 #!/bin/bash
 
 # Run Qwen training
-python train.py configs/qwen_config.json
+python train.py configs/qwen_config.json --push_to_hub true
 

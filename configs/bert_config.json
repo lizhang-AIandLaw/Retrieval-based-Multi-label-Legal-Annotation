@@ -25,7 +25,7 @@
     "overwrite_output_dir": true,
     "fp16": true,
     "report_to": "wandb",
-    "push_to_hub": true,
+    "push_to_hub": false,
     "hub_strategy": "end"
 }
 

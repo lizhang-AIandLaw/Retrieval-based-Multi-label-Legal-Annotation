@@ -497,6 +497,13 @@ def main():
             json.dump(preds_list, writer)
             
         logger.info(f"Predictions saved to {output_predictions_file}")
+        
+        # Explicitly print Micro and Macro F1 for user visibility
+        print("\n" + "="*30)
+        print(f"Test Results for {model_config.model_name_or_path}")
+        print(f"F1 Micro: {metrics.get('test_f1_micro', 'N/A')}")
+        print(f"F1 Macro: {metrics.get('test_f1_macro', 'N/A')}")
+        print("="*30 + "\n")
 
 if __name__ == "__main__":
     import transformers

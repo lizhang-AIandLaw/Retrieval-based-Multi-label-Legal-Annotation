@@ -26,7 +26,7 @@
     "fp16": true,
     "trust_remote_code": true,
     "report_to": "wandb",
-    "push_to_hub": true,
+    "push_to_hub": false,
     "hub_strategy": "end",
     "ignore_mismatched_sizes": true
 }
