@@ -29,7 +29,7 @@
     "hierarchical": true,
     "max_segments": 16,
     "max_segment_length": 512,
-    "report_to": "wandb",
+    "report_to": "none",
     "push_to_hub": false,
     "hub_strategy": "end"
 }

@@ -24,7 +24,7 @@
     "seed": 42,
     "overwrite_output_dir": true,
     "fp16": true,
-    "report_to": "wandb",
+    "report_to": "none",
     "push_to_hub": false,
     "hub_strategy": "end"
 }
