@@ -239,11 +239,35 @@ def main():
 
     if model_config.hierarchical:
         logger.info(f"Initializing Hierarchical Model with base: {model_config.model_name_or_path}")
+        
+        # Check if model_name_or_path is a local directory (trained model)
+        # If so, we might need to be careful about what we pass as base_model_name.
+        # If it's the output dir, it contains config.json (base model config) and pytorch_model.bin (hierarchical weights).
+        # AutoModel.from_pretrained(dir) will try to load weights and fail/warn on mismatch.
+        # We want to init the structure, then load our weights.
+        
         model = HierarchicalClassifier(
             base_model_name=model_config.model_name_or_path,
             num_labels=num_labels,
-            trust_remote_code=model_config.trust_remote_code
+            trust_remote_code=model_config.trust_remote_code,
+            # Pass hierarchical params from config
+            num_layers=2, # default in class, but could be in config
+            nhead=8,
+            dim_feedforward=2048
         )
+        
+        # If loading from a locally saved hierarchical model, load state dict manually
+        if os.path.isdir(model_config.model_name_or_path):
+            weights_path = os.path.join(model_config.model_name_or_path, "pytorch_model.bin")
+            if os.path.exists(weights_path):
+                logger.info(f"Loading hierarchical model weights from {weights_path}")
+                state_dict = torch.load(weights_path, map_location="cpu")
+                # We use strict=False because the base model inside might have loaded some keys (if matching) or not.
+                # Actually, strict=True should work if the saved model matches the architecture perfectly.
+                # The saved pytorch_model.bin contains keys for "base_model...", "transformer_encoder...", etc.
+                # Our model has those attributes.
+                load_result = model.load_state_dict(state_dict, strict=False)
+                logger.info(f"Weights loaded: {load_result}")
     else:
         logger.info(f"Initializing Standard Sequence Classification Model: {model_config.model_name_or_path}")
         config = AutoConfig.from_pretrained(
