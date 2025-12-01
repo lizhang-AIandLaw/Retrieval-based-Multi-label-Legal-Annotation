@@ -1,0 +1,21 @@
+# Ignore model outputs
+output/
+*.pth
+*.bin
+*.safetensors
+*.pt
+
+# Ignore environment files
+.env
+venv/
+env/
+__pycache__/
+.DS_Store
+
+# Ignore wandb
+wandb/
+
+# Ignore IDE settings
+.vscode/
+.idea/
+

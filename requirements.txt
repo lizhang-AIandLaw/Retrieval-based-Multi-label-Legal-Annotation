@@ -1,0 +1,10 @@
+torch
+transformers
+datasets
+accelerate
+scikit-learn
+evaluate
+numpy
+pandas
+deepspeed
+wandb
