@@ -16,6 +16,7 @@
     "num_train_epochs": 4,
     "lr_scheduler_type": "cosine",
     "warmup_ratio": 0.1,
+    "logging_steps": 50,
     "eval_strategy": "epoch",
     "save_strategy": "epoch",
     "load_best_model_at_end": true,
