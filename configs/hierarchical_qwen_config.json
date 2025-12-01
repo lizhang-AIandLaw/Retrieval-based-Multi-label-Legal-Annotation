@@ -24,7 +24,6 @@
     "save_total_limit": 2,
     "seed": 42,
     "overwrite_output_dir": true,
-    "attention_type": "flash_attention_2",
     "attn_implementation": "flash_attention_2",
     "fp16": false,
     "bf16": true,
