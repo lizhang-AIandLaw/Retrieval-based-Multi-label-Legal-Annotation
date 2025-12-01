@@ -218,18 +218,37 @@ def main():
 
     # Load dataset
     # ecthr_a: input is a list of strings (text), output is a list of class indices.
-    raw_datasets = load_dataset(
-        model_config.dataset_name,
-        model_config.dataset_config_name,
-        trust_remote_code=model_config.trust_remote_code
-    )
+    # trust_remote_code is deprecated for load_dataset in recent versions and datasets are usually safe/parquet now.
+    # Removing it to fix "ERROR:datasets.load:trust_remote_code is not supported anymore."
+    try:
+        raw_datasets = load_dataset(
+            model_config.dataset_name,
+            model_config.dataset_config_name,
+            trust_remote_code=model_config.trust_remote_code
+        )
+    except Exception:
+         # Fallback if trust_remote_code is rejected (new datasets lib)
+         raw_datasets = load_dataset(
+            model_config.dataset_name,
+            model_config.dataset_config_name
+        )
 
     # Labels
     num_labels = model_config.num_labels
     
     # Load pretrained model and tokenizer
+    # If model_name_or_path is a local directory, ensure we use absolute path or relative path correctly.
+    # HuggingFace Hub usually expects repo_id (string) or local path.
+    # The error "Repo id must be in the form..." suggests it treats "./output/..." as a repo id because it didn't find it locally?
+    # Or maybe cached_file thinks it's a repo ID.
+    # os.path.abspath might help avoid ambiguity.
+    
+    model_path = model_config.model_name_or_path
+    if os.path.isdir(model_path) or model_path.startswith("./") or model_path.startswith("/"):
+        model_path = os.path.abspath(model_path)
+        
     tokenizer = AutoTokenizer.from_pretrained(
-        model_config.model_name_or_path,
+        model_path,
         trust_remote_code=model_config.trust_remote_code
     )
     
@@ -246,8 +265,13 @@ def main():
         # AutoModel.from_pretrained(dir) will try to load weights and fail/warn on mismatch.
         # We want to init the structure, then load our weights.
         
+        # Resolve path for local directories
+        base_model_name = model_config.model_name_or_path
+        if os.path.isdir(base_model_name) or base_model_name.startswith("./"):
+            base_model_name = os.path.abspath(base_model_name)
+
         model = HierarchicalClassifier(
-            base_model_name=model_config.model_name_or_path,
+            base_model_name=base_model_name,
             num_labels=num_labels,
             trust_remote_code=model_config.trust_remote_code,
             # Pass hierarchical params from config
@@ -257,8 +281,8 @@ def main():
         )
         
         # If loading from a locally saved hierarchical model, load state dict manually
-        if os.path.isdir(model_config.model_name_or_path):
-            weights_path = os.path.join(model_config.model_name_or_path, "pytorch_model.bin")
+        if os.path.isdir(base_model_name):
+            weights_path = os.path.join(base_model_name, "pytorch_model.bin")
             if os.path.exists(weights_path):
                 logger.info(f"Loading hierarchical model weights from {weights_path}")
                 state_dict = torch.load(weights_path, map_location="cpu")
@@ -270,15 +294,21 @@ def main():
                 logger.info(f"Weights loaded: {load_result}")
     else:
         logger.info(f"Initializing Standard Sequence Classification Model: {model_config.model_name_or_path}")
+        
+        # Resolve path
+        model_path = model_config.model_name_or_path
+        if os.path.isdir(model_path) or model_path.startswith("./"):
+            model_path = os.path.abspath(model_path)
+
         config = AutoConfig.from_pretrained(
-            model_config.model_name_or_path,
+            model_path,
             num_labels=num_labels,
             problem_type="multi_label_classification",
             trust_remote_code=model_config.trust_remote_code,
         )
         
         model = AutoModelForSequenceClassification.from_pretrained(
-            model_config.model_name_or_path,
+            model_path,
             config=config,
             trust_remote_code=model_config.trust_remote_code,
             ignore_mismatched_sizes=model_config.ignore_mismatched_sizes
