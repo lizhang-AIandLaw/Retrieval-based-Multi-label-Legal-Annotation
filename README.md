@@ -76,21 +76,13 @@ To train Hierarchical Qwen-Embedding:
 
 ## Evaluation Only
 
-If you already have trained models and want to run evaluation on the test split:
+To evaluate both Baseline (untrained) and Fine-tuned models on the test split:
 
 ```bash
-# Evaluate Standard BERT
-./scripts/eval_bert.sh
-
-# Evaluate Standard Qwen
-./scripts/eval_qwen.sh
-
-# Evaluate Hierarchical BERT
-./scripts/eval_hierarchical_bert.sh
-
-# Evaluate Hierarchical Qwen
-./scripts/eval_hierarchical_qwen.sh
+./scripts/eval_all.sh
 ```
+
+This script sequentially runs evaluation for all 8 configurations (Standard/Hierarchical x BERT/Qwen x Baseline/Fine-tuned).
 
 ## Inference
 
@@ -100,18 +92,27 @@ To use a trained model for prediction on a text string:
 python inference.py ./output/bert_ecthr_a "Your legal text here..."
 ```
 
+## How Models Output Labels (0-9)
+
+The models are adapted for multi-label classification to output probabilities for 10 specific classes (Articles of ECHR):
+
+1.  **Legal-BERT (`BertForSequenceClassification`)**:
+    -   A linear classification head is added on top of the `[CLS]` token embedding.
+    -   It projects the 768-dim vector to 10 logits.
+
+2.  **Qwen-Embedding (`Qwen2ForSequenceClassification`)**:
+    -   Transformers library automatically adds a classification head (linear layer) on top of the last token's hidden state.
+    -   It projects the hidden vector (e.g., 1024-dim) to 10 logits.
+
+In both cases, the output logits are passed through a **Sigmoid** activation function. Any class with probability > 0.5 is considered a positive prediction (output "1" in the multi-hot vector).
+
 ## Notes on Input Strategies
 
 ### Standard Input Window
 - **BERT**: Inputs are truncated to 512 tokens.
-- **Qwen**: Inputs are truncated to 2048 tokens.
+- **Qwen**: Inputs are truncated to 2048 tokens (configurable up to ~32k, but limited by VRAM).
 
 ### Hierarchical Input
-- **Hierarchical BERT**: Documents are split into up to 32 segments of 128 tokens each (effective context ~4096 tokens).
-- **Hierarchical Qwen**: Documents are split into up to 16 segments of 512 tokens each (effective context ~8192 tokens).
+- **Hierarchical BERT**: Documents are split into up to 32 segments of 128 tokens each.
+- **Hierarchical Qwen**: Documents are split into up to 16 segments of 512 tokens each.
 - This architecture allows the models to process documents far longer than their native context windows.
-
-## Models Details
-
-- **Legal-BERT**: A specialized BERT model pre-trained on legal text, used here as the segment encoder in the hierarchical setup.
-- **Qwen-Embedding**: A decoder-based embedding model. In the hierarchical setup, it functions as a powerful feature extractor for each segment, proving its versatility as a "first layer" encoder despite its decoder architecture.
