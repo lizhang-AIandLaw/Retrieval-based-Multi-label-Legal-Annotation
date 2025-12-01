@@ -112,10 +112,87 @@ def compute_metrics(p: EvalPrediction):
 
 def main():
     parser = HfArgumentParser((ModelConfig, TrainingArguments))
+    # Check if arguments are provided via command line flags (not just json file)
+    # The error suggests sys.argv[1] is ending with .sh or not being parsed as json file correctly
+    # if user mixes flags and json file, HfArgumentParser handles it if we pass everything.
+    
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+        # Pure JSON config file case
         model_config, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
-        model_config, training_args = parser.parse_args_into_dataclasses()
+        # Command line arguments (potentially mixing with defaults or partials)
+        # If a json file is passed as one of the args, we might need to handle it differently,
+        # but usually standard usage is: python train.py config.json OR python train.py --arg value
+        # The issue "train.py: error: the following arguments are required: --model_name_or_path"
+        # means HfArgumentParser expects arguments that were missing when parsed from CLI.
+        # But we are passing the config json file as the first argument in the shell script.
+        # Let's double check how we parse.
+        
+        # If the first arg is a json file, we should use parse_json_file, but allow for overrides?
+        # HfArgumentParser.parse_json_file returns (dataclass, dataclass).
+        # If we want to support overrides (like --do_train false), we should use parse_args_into_dataclasses
+        # but we need to tell it where to look for the config file if it's not a standard arg.
+        
+        # Improved logic:
+        # If first arg ends in .json, load it.
+        # Then if there are more args, we might need to override.
+        # But parse_json_file doesn't support extra args easily.
+        # Instead, we can use parse_args_into_dataclasses and pass the json file contents as defaults? No.
+        
+        # Common pattern:
+        # python train.py config.json --arg1 value
+        
+        if len(sys.argv) > 1 and sys.argv[1].endswith(".json"):
+            json_file = os.path.abspath(sys.argv[1])
+            # Load json manually to update defaults or just use as base
+            # However, HfArgumentParser doesn't mix json file path + CLI args natively in one call easily unless we implementation custom logic.
+            # Let's try to read the json file and simulate args if we are in this mixed mode.
+            
+            # Actually, HuggingFace `TrainingArguments` doesn't natively support "config.json + overrides" in one line 
+            # via `parse_json_file`. `parse_json_file` only reads the file.
+            # `parse_args_into_dataclasses` reads from sys.argv.
+            
+            # Workaround: If we detect a json file as first arg, we read it, 
+            # construct a list of arguments from it, append the rest of sys.argv[2:], 
+            # and then call parse_args_into_dataclasses.
+            
+            import json
+            with open(json_file, 'r') as f:
+                config_dict = json.load(f)
+            
+            # Convert dict to CLI args
+            # We need to be careful about boolean flags (e.g. --do_train) which might take no value or "True"/"False" depending on parser.
+            # HfArgumentParser handles booleans well if we pass --do_train True or --no_do_train.
+            
+            synthetic_args = []
+            for k, v in config_dict.items():
+                if v is None:
+                    continue
+                if isinstance(v, bool):
+                    # For boolean, HfArgumentParser (via argparse) usually uses store_true/false or explicit True/False
+                    # TrainingArguments uses boolean_optional_action usually.
+                    # Safer to use --param_name True/False string for our parsing if we just inject them.
+                    # But standard argparse for bools: --do_train (implies true).
+                    # Let's assume we construct explicit --key value.
+                    synthetic_args.append(f"--{k}")
+                    synthetic_args.append(str(v))
+                elif isinstance(v, list):
+                     # handle list arguments (e.g. report_to)
+                     synthetic_args.append(f"--{k}")
+                     for item in v:
+                         synthetic_args.append(str(item))
+                else:
+                    synthetic_args.append(f"--{k}")
+                    synthetic_args.append(str(v))
+            
+            # Add the rest of the real CLI args (overrides)
+            # They will be appended at the end, so argparse should let them override earlier values.
+            synthetic_args.extend(sys.argv[2:])
+            
+            model_config, training_args = parser.parse_args_into_dataclasses(args=synthetic_args)
+            
+        else:
+            model_config, training_args = parser.parse_args_into_dataclasses()
 
     # Setup logging
     logging.basicConfig(
