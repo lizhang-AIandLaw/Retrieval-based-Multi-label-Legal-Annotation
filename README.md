@@ -36,6 +36,11 @@ Models used:
    wandb login
    ```
 
+3. Install Flash Attention (Required for Qwen models):
+   ```bash
+   pip install flash-attn --no-build-isolation
+   ```
+
 ## Training
 
 Training scripts are configured to:
