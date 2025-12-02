@@ -10,5 +10,5 @@ python train.py configs/qwen_config.json \
     --project "legal-classification" \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 4 \
-    --gradient_accumulation_steps 4 \
+    --gradient_accumulation_steps 2 \
     --gradient_checkpointing true
