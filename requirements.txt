@@ -8,5 +8,4 @@ numpy
 pandas
 deepspeed
 wandb
-flash-attn
 peft
