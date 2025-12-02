@@ -1,5 +1,6 @@
 # Ignore model outputs
-output/
+output/*
+!output/analysis_base_qwen/
 *.pth
 *.bin
 *.safetensors
