@@ -9,3 +9,6 @@ pandas
 deepspeed
 wandb
 peft
+matplotlib
+seaborn
+umap-learn
