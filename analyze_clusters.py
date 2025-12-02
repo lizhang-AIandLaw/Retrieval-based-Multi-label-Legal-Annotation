@@ -55,10 +55,11 @@ def get_embeddings(model, dataloader, device):
             # Normalize
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
             
-            all_embeddings.append(embeddings.cpu().numpy())
+            # Convert to float32 before numpy conversion to avoid BFloat16 issues
+            all_embeddings.append(embeddings.float().cpu().numpy())
             
             if "labels" in batch:
-                all_labels.append(batch["labels"].cpu().numpy())
+                all_labels.append(batch["labels"].float().cpu().numpy())
 
     return np.vstack(all_embeddings), np.vstack(all_labels)
 
