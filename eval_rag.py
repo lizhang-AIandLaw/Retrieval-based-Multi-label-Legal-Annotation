@@ -142,8 +142,10 @@ def evaluate_params(k, threshold, all_topk_indices, all_topk_values, train_label
     probs = summed_scores / sum_weights # (B, Num_Labels)
     
     # Thresholding
-    y_pred = np.zeros_like(probs.cpu().numpy())
-    y_pred[probs.cpu().numpy() >= threshold] = 1
+    # FIX: Convert to float32 before numpy conversion because numpy doesn't support bfloat16
+    probs_np = probs.float().cpu().numpy()
+    y_pred = np.zeros_like(probs_np)
+    y_pred[probs_np >= threshold] = 1
     
     f1_micro = f1_score(y_true, y_pred, average='micro')
     f1_macro = f1_score(y_true, y_pred, average='macro')
@@ -200,10 +202,33 @@ def main():
     test_loader = DataLoader(tokenized_datasets["test"], batch_size=config.batch_size, collate_fn=data_collator, shuffle=False)
 
     # Encode
-    logger.info("Encoding Training Set (Index)...")
-    train_embeddings, train_labels = get_embeddings(model, train_loader, device)
-    logger.info("Encoding Test Set (Query)...")
-    test_embeddings, test_labels = get_embeddings(model, test_loader, device)
+    cache_dir = os.path.join(config.output_dir, "cache")
+    if not os.path.exists(cache_dir):
+        os.makedirs(cache_dir)
+        
+    train_emb_path = os.path.join(cache_dir, "train_embeddings.pt")
+    train_lbl_path = os.path.join(cache_dir, "train_labels.pt")
+    test_emb_path = os.path.join(cache_dir, "test_embeddings.pt")
+    test_lbl_path = os.path.join(cache_dir, "test_labels.pt")
+    
+    # Try to load from cache
+    if os.path.exists(train_emb_path) and os.path.exists(test_emb_path):
+        logger.info(f"Loading embeddings from cache: {cache_dir}")
+        train_embeddings = torch.load(train_emb_path, map_location=device)
+        train_labels = torch.load(train_lbl_path, map_location=device)
+        test_embeddings = torch.load(test_emb_path, map_location=device)
+        test_labels = torch.load(test_lbl_path, map_location=device)
+    else:
+        logger.info("Encoding Training Set (Index)...")
+        train_embeddings, train_labels = get_embeddings(model, train_loader, device)
+        logger.info("Encoding Test Set (Query)...")
+        test_embeddings, test_labels = get_embeddings(model, test_loader, device)
+        
+        logger.info(f"Saving embeddings to cache: {cache_dir}")
+        torch.save(train_embeddings, train_emb_path)
+        torch.save(train_labels, train_lbl_path)
+        torch.save(test_embeddings, test_emb_path)
+        torch.save(test_labels, test_lbl_path)
 
     train_embeddings = train_embeddings.to(device)
     test_embeddings = test_embeddings.to(device)

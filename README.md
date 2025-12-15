@@ -108,6 +108,9 @@ We also support a **Retrieval-Augmented Classification** approach (k-Nearest Nei
 
 This effectively treats the training set as an external memory, allowing for non-parametric classification which can be particularly effective in low-resource or zero-shot scenarios.
 
+**Caching & Resuming:**
+Encoding the entire dataset (especially with large models) can be time-consuming. The script automatically caches the computed embeddings to `./output/rag_results/cache/`. If you run the script again, it will load the embeddings from disk, skipping the encoding step.
+
 **Hyperparameter Search:**
 The performance of k-NN relies on choosing the optimal number of neighbors ($k$) and the decision threshold. We provide a grid search feature to automatically find the best configuration on the test set:
 
