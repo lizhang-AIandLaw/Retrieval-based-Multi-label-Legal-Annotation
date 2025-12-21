@@ -87,12 +87,11 @@ def format_instruction(instruction, query, doc):
 
 def process_reranker_inputs(pairs, tokenizer, max_length, prefix_tokens, suffix_tokens, device):
     # pairs is list of (instruction, query, doc)
-    # Note: official code processes raw strings. We need to construct them first.
     
     formatted_texts = [format_instruction(inst, q, d) for inst, q, d in pairs]
     
-    # Pre-tokenize to handle the manual prefix/suffix logic from official docs
-    # "inputs = tokenizer(pairs, ...)" in official doc assumes `pairs` is list of strings
+    # Custom padding logic from official doc
+    # We pre-calculate length to truncate properly
     
     inputs = tokenizer(
         formatted_texts, 
@@ -151,6 +150,7 @@ def encode_dataset(model, tokenizer, dataset, max_length, batch_size, device, de
                 embeddings = outputs.last_hidden_state[torch.arange(outputs.last_hidden_state.shape[0]), sequence_lengths]
                 
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
+            # IMPORTANT: Convert bf16 to float32 for numpy compatibility
             all_embeddings.append(embeddings.float().cpu().numpy())
             
     return np.vstack(all_embeddings)
@@ -182,11 +182,16 @@ def main():
     # 3. Setup Reranker (CausalLM)
     logger.info(f"Loading Reranker: {config.reranker_model_name_or_path}")
     rerank_tokenizer = AutoTokenizer.from_pretrained(config.reranker_model_name_or_path, trust_remote_code=True, padding_side='left')
+    
+    # Set pad_token for Reranker (Critical for batch processing)
+    if rerank_tokenizer.pad_token is None:
+        rerank_tokenizer.pad_token = rerank_tokenizer.eos_token
+        
     rerank_model = AutoModelForCausalLM.from_pretrained(
         config.reranker_model_name_or_path,
         trust_remote_code=True,
         torch_dtype=torch.bfloat16 if config.bf16 else torch.float32,
-        attn_implementation="flash_attention_2" # Recommended by official docs
+        attn_implementation="flash_attention_2"
     ).to(device).eval()
     
     # Prepare Reranker Tokens
