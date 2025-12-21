@@ -88,6 +88,10 @@ class TrainConfig:
         default=True,
         metadata={"help": "Use bf16."}
     )
+    gradient_checkpointing: bool = field(
+        default=False,
+        metadata={"help": "Use gradient checkpointing to save memory."}
+    )
     seed: int = field(
         default=42,
         metadata={"help": "Random seed."}
@@ -217,6 +221,9 @@ def train():
         trust_remote_code=True,
         torch_dtype=torch.bfloat16 if config.bf16 else torch.float32
     )
+    
+    if config.gradient_checkpointing:
+        model.gradient_checkpointing_enable()
     
     # 2. Setup LoRA
     # Target modules for Qwen: usually c_attn or query_key_value depending on version.
