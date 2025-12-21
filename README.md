@@ -144,6 +144,24 @@ The models are guided to output labels 0-9 using a **Classification Head** and *
 3. **Loss Function**: We use `BCEWithLogitsLoss`. It treats each of the 10 outputs as an independent binary classification problem (Is label 0 present? Is label 1 present? ...).
 4. **Inference**: The model outputs logits. We apply **Sigmoid** to get probabilities and output any label with probability **> 0.5**.
 
+## Technical Details: Fine-Tuning & Memory Optimization
+
+We observed distinct memory behaviors between Standard Classification (SFT) and Embedding Fine-Tuning. Here is a comparison of the technical configurations required to run these experiments on standard hardware (e.g., A10 24GB vs. A100 40GB):
+
+| Feature | Standard SFT (e.g., Qwen-0.6B) | Embedding Fine-Tuning | Impact on Memory |
+| :--- | :--- | :--- | :--- |
+| **Loss Function** | Cross Entropy (BCE) | InfoNCE (Contrastive) | Embedding requires storing activations for pairs (Anchor + Positive), effectively **doubling** sequence memory usage. |
+| **Input Structure** | Single Sequence | Pairs (Anchor, Positive) | Contrastive learning necessitates processing two distinct sequences per sample. |
+| **Max Sequence Length** | 2048 - 8192 | 2048 - 8192 | Memory usage grows quadratically ($O(L^2)$) with length. 8192 is significantly more demanding than 2048. |
+| **Gradient Checkpointing** | **Enabled** | **Enabled** (Critical) | Essential for long sequences. Trades compute for memory (re-computes activations during backward pass). **Required** for Qwen @ 2048+ length on A100. |
+| **Batch Size Strategy** | Can be 1 (with Accumulation) | **Must be > 1** | Contrastive loss needs in-batch negatives. If Batch Size=1, the model cannot learn from negatives. |
+
+**Key Takeaway for Embedding Fine-Tuning:**
+To fine-tune embeddings with long contexts (2048+) on GPUs:
+1.  **Gradient Checkpointing** is mandatory.
+2.  **Flash Attention 2** is mandatory.
+3.  **Batch Size** is constrained by memory but must be at least 2 (per GPU) for contrastive learning to be effective.
+
 ## Notes on Input Strategies
 
 ### Standard Input Window
