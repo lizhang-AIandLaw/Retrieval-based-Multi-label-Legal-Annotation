@@ -120,7 +120,7 @@ def compute_logits(model, inputs, token_true_id, token_false_id):
         false_vector = batch_scores[:, token_false_id]
         batch_scores = torch.stack([false_vector, true_vector], dim=1)
         batch_scores = torch.nn.functional.log_softmax(batch_scores, dim=1)
-        scores = batch_scores[:, 1].exp().cpu().numpy() # Return probability of "yes"
+        scores = batch_scores[:, 1].exp().float().cpu().numpy() # Return probability of "yes"
     return scores
 
 # --- Retriever Logic ---
