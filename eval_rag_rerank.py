@@ -107,7 +107,8 @@ def encode_dataset(model, tokenizer, dataset, max_length, batch_size, device, de
                 embeddings = outputs.last_hidden_state[torch.arange(outputs.last_hidden_state.shape[0]), sequence_lengths]
                 
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
-            all_embeddings.append(embeddings.cpu().numpy())
+            # Convert to float32 before converting to numpy, as numpy doesn't support bfloat16
+            all_embeddings.append(embeddings.float().cpu().numpy())
             
     return np.vstack(all_embeddings)
 
