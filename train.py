@@ -643,6 +643,11 @@ def main():
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
+        
+        # Explicitly log FLOPs for experimental comparison
+        total_flos = train_result.metrics.get("train_flos", train_result.metrics.get("total_flos", 0))
+        logger.info(f">>> TRAINING_COST_FLOPs: {total_flos}")
+
 
     # Evaluation
     if training_args.do_eval:

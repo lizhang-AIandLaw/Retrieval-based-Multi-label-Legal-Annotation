@@ -127,6 +127,12 @@ class HierarchicalClassifier(nn.Module):
             attentions=None,
         )
 
+    def gradient_checkpointing_enable(self, gradient_checkpointing_kwargs=None):
+        """
+        Activates gradient checkpointing for the current model.
+        """
+        self.base_model.gradient_checkpointing_enable(gradient_checkpointing_kwargs=gradient_checkpointing_kwargs)
+
     def save_pretrained(self, save_directory):
         # Custom save to ensure base model + new layers are saved
         import os

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Terminal 5: BERT Fine-tuning - Large Sizes (2000, 4500, 9000) - GPU 1
+# Terminal 5: Hierarchical BERT (Large Data) + LoRA - GPU 1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_VISIBLE_DEVICES=1
 
@@ -11,10 +11,9 @@ for DS in "${DATASETS[@]}"; do
     if [ "$DS" == "eurlex" ]; then NLABELS=100; fi
     
     for SIZE in "${SIZES[@]}"; do
-        echo ">>> Training BERT on ${DS} with ${SIZE} samples..."
-        OUTPUT_DIR="./output/bert_scaling_${DS}_${SIZE}"
+        echo ">>> Training Hierarchical BERT (LoRA) on ${DS} with ${SIZE} samples..."
+        OUTPUT_DIR="./output/bert_hier_lora_scaling_${DS}_${SIZE}"
         
-        # Standard Epochs
         EPOCHS=5
         
         python train.py configs/bert_config.json \
@@ -23,6 +22,15 @@ for DS in "${DATASETS[@]}"; do
             --max_train_samples ${SIZE} \
             --num_train_epochs ${EPOCHS} \
             --num_labels ${NLABELS} \
+            --hierarchical True \
+            --max_segments 64 \
+            --max_segment_length 128 \
+            --per_device_train_batch_size 1 \
+            --gradient_accumulation_steps 8 \
+            --gradient_checkpointing True \
+            --use_lora True \
+            --lora_r 8 \
+            --lora_alpha 16 \
             --save_total_limit 1 \
             --overwrite_output_dir True
     done

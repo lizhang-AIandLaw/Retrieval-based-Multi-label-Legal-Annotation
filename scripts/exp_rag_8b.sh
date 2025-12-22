@@ -1,5 +1,5 @@
 #!/bin/bash
-# Terminal 3: RAG 8B (GPU 1)
+# Terminal 3: RAG 8B (8192 Length)
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_VISIBLE_DEVICES=1
 
@@ -13,9 +13,9 @@ for DS in "${DATASETS[@]}"; do
         --dataset_name "coastalcph/lex_glue" \
         --dataset_config_name "${DS}" \
         --data_sizes "${SIZES}" \
-        --output_dir "./output/data_scaling_results_8b" \
-        --max_seq_length 4096 \
-        --batch_size 4 \
+        --output_dir "./output/data_scaling_results_8b_8k" \
+        --max_seq_length 8192 \
+        --batch_size 1 \
         --k 10 \
         --threshold 0.4 \
         --bf16 true
