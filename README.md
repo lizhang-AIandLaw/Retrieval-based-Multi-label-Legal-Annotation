@@ -108,6 +108,24 @@ We also support a **Retrieval-Augmented Classification** approach (k-Nearest Nei
 
 This effectively treats the training set as an external memory, allowing for non-parametric classification which can be particularly effective in low-resource or zero-shot scenarios.
 
+### Data Efficiency Experiments
+
+We provide a comprehensive suite of scripts to evaluate model performance across different training set sizes (`[100, 500, 1000, 2000, 4500, 9000]`), comparing Training-Free RAG against Supervised Fine-Tuning.
+
+**To run the Data Scaling Experiment:**
+
+```bash
+# 1. Run RAG Scaling (Fast, runs all sizes)
+./scripts/exp_rag_scaling.sh
+
+# 2. Run BERT Fine-tuning Scaling (Slow, requires GPU)
+# Run small sizes (100-1000) on GPU 0
+CUDA_VISIBLE_DEVICES=0 ./scripts/exp_bert_small.sh
+
+# Run large sizes (2000-9000) on GPU 1
+CUDA_VISIBLE_DEVICES=1 ./scripts/exp_bert_large.sh
+```
+
 **Caching & Resuming:**
 Encoding the entire dataset (especially with large models) can be time-consuming. The script automatically caches the computed embeddings to `./output/rag_results/cache/`. If you run the script again, it will load the embeddings from disk, skipping the encoding step.
 
