@@ -1,7 +1,7 @@
 #!/bin/bash
 # Terminal 5: Hierarchical BERT (Large Data) + LoRA - GPU 1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export CUDA_VISIBLE_DEVICES=1
+export CUDA_VISIBLE_DEVICES=2
 
 DATASETS=("ecthr_a" "ecthr_b" "eurlex")
 SIZES=(2000 4500 9000)
