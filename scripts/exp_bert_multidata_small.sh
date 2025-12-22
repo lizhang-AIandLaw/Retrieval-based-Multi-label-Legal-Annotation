@@ -33,6 +33,7 @@ for DS in "${DATASETS[@]}"; do
             --use_lora True \
             --lora_r 8 \
             --lora_alpha 16 \
+            --lora_target_modules "query" "value" \
             --save_total_limit 1 \
             --overwrite_output_dir True
     done
