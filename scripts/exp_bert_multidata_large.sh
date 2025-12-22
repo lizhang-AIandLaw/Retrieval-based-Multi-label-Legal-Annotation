@@ -1,21 +1,20 @@
 #!/bin/bash
-# Terminal 4: Run BERT Fine-tuning (Large Data) on MULTIPLE datasets
-# Suggest GPU 1
-
+# Terminal 5: BERT Fine-tuning - Large Sizes (2000, 4500, 9000) - GPU 1
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export CUDA_VISIBLE_DEVICES=1
 
 DATASETS=("ecthr_a" "ecthr_b" "eurlex")
-SIZES=(2000 4500 9000 20000)
+SIZES=(2000 4500 9000)
 
 for DS in "${DATASETS[@]}"; do
     if [ "$DS" == "ecthr_a" ] || [ "$DS" == "ecthr_b" ]; then NLABELS=10; fi
-    if [ "$DS" == "scotus" ]; then NLABELS=14; fi
-    if [ "$DS" == "eurlex" ] || [ "$DS" == "ledgar" ]; then NLABELS=100; fi
+    if [ "$DS" == "eurlex" ]; then NLABELS=100; fi
     
     for SIZE in "${SIZES[@]}"; do
         echo ">>> Training BERT on ${DS} with ${SIZE} samples..."
         OUTPUT_DIR="./output/bert_scaling_${DS}_${SIZE}"
         
+        # Standard Epochs
         EPOCHS=5
         
         python train.py configs/bert_config.json \
@@ -28,4 +27,3 @@ for DS in "${DATASETS[@]}"; do
             --overwrite_output_dir True
     done
 done
-

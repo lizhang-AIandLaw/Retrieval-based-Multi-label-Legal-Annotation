@@ -1,8 +1,7 @@
 #!/bin/bash
-# Terminal 3: Run BERT Fine-tuning (Small Data) on MULTIPLE datasets
-# Suggest GPU 0
-
+# Terminal 4: BERT Fine-tuning - Small Sizes (100, 500, 1000) - GPU 0
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
+export CUDA_VISIBLE_DEVICES=0
 
 DATASETS=("ecthr_a" "ecthr_b" "eurlex")
 SIZES=(100 500 1000)
@@ -10,15 +9,15 @@ SIZES=(100 500 1000)
 for DS in "${DATASETS[@]}"; do
     echo "### Processing Dataset: ${DS} ###"
     
+    # Auto-detect labels
     if [ "$DS" == "ecthr_a" ] || [ "$DS" == "ecthr_b" ]; then NLABELS=10; fi
-    if [ "$DS" == "scotus" ]; then NLABELS=14; fi
-    if [ "$DS" == "eurlex" ] || [ "$DS" == "ledgar" ]; then NLABELS=100; fi
-    if [ "$DS" == "unfair_tos" ]; then NLABELS=8; fi
-
+    if [ "$DS" == "eurlex" ]; then NLABELS=100; fi # LexGlue uses simplified 100 classes
+    
     for SIZE in "${SIZES[@]}"; do
         echo ">>> Training BERT on ${DS} with ${SIZE} samples..."
         OUTPUT_DIR="./output/bert_scaling_${DS}_${SIZE}"
         
+        # Dynamic Epochs for small data
         if [ ${SIZE} -le 500 ]; then EPOCHS=20; else EPOCHS=10; fi
         
         python train.py configs/bert_config.json \
@@ -31,4 +30,3 @@ for DS in "${DATASETS[@]}"; do
             --overwrite_output_dir True
     done
 done
-

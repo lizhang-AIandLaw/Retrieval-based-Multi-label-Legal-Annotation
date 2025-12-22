@@ -207,8 +207,21 @@ def main():
     test_embeddings = encode_dataset(model, tokenizer, test_set, config.max_seq_length, config.batch_size, device)
     test_labels = [ex["labels"] for ex in test_set]
     
-    # 2. Parse Data Sizes
-    sizes = [int(s) for s in config.data_sizes.split(",")]
+    # 2. Parse Data Sizes or Ratios
+    raw_inputs = config.data_sizes.split(",")
+    sizes = []
+    
+    for s in raw_inputs:
+        val = float(s)
+        if val <= 1.0 and val > 0:
+            # It's a ratio
+            size = int(len(full_train_set) * val)
+            if size == 0: size = 1
+            sizes.append(size)
+        else:
+            # It's an absolute number
+            sizes.append(int(val))
+
     # Ensure sizes don't exceed dataset
     sizes = [s for s in sizes if s <= len(full_train_set)]
     if len(full_train_set) not in sizes:

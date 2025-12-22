@@ -115,6 +115,15 @@ class ModelConfig:
             )
         },
     )
+    max_train_ratio: Optional[float] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For data scaling experiments: truncate the number of training examples to this ratio "
+                "(e.g., 0.1 for 10% of data). Overrides max_train_samples if set."
+            )
+        },
+    )
 
 def multi_label_metrics(predictions, labels, threshold=0.5):
     # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
@@ -541,10 +550,25 @@ def main():
         )
 
     train_dataset = processed_datasets["train"]
-    if training_args.do_train and model_config.max_train_samples is not None:
-        max_train_samples = min(len(train_dataset), model_config.max_train_samples)
-        train_dataset = train_dataset.select(range(max_train_samples))
-        logger.info(f"*** Training on a SUBSET of {max_train_samples} samples (Total available: {len(processed_datasets['train'])}) ***")
+    if training_args.do_train:
+        max_train_samples = len(train_dataset)
+        
+        # Calculate samples from ratio if provided
+        if model_config.max_train_ratio is not None:
+            max_train_samples = int(len(train_dataset) * model_config.max_train_ratio)
+            # Ensure at least 1 sample if ratio > 0
+            if max_train_samples == 0 and model_config.max_train_ratio > 0:
+                max_train_samples = 1
+            logger.info(f"Using max_train_ratio={model_config.max_train_ratio} -> {max_train_samples} samples")
+            
+        # Or use absolute number if provided and no ratio
+        elif model_config.max_train_samples is not None:
+            max_train_samples = min(len(train_dataset), model_config.max_train_samples)
+            
+        # Apply truncation if needed
+        if max_train_samples < len(train_dataset):
+            train_dataset = train_dataset.select(range(max_train_samples))
+            logger.info(f"*** Training on a SUBSET of {max_train_samples} samples (Total available: {len(processed_datasets['train'])}) ***")
 
     eval_dataset = processed_datasets["validation"]
     test_dataset = processed_datasets["test"]
