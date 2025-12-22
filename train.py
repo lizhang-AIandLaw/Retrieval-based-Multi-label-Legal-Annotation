@@ -541,6 +541,11 @@ def main():
         )
 
     train_dataset = processed_datasets["train"]
+    if training_args.do_train and model_config.max_train_samples is not None:
+        max_train_samples = min(len(train_dataset), model_config.max_train_samples)
+        train_dataset = train_dataset.select(range(max_train_samples))
+        logger.info(f"*** Training on a SUBSET of {max_train_samples} samples (Total available: {len(processed_datasets['train'])}) ***")
+
     eval_dataset = processed_datasets["validation"]
     test_dataset = processed_datasets["test"]
 
