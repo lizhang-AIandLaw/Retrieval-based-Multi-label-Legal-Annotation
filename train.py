@@ -106,6 +106,15 @@ class ModelConfig:
         default_factory=lambda: ["q_proj", "v_proj"],
         metadata={"help": "List of module names to target for LoRA."}
     )
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of training examples to this "
+                "value if set."
+            )
+        },
+    )
 
 def multi_label_metrics(predictions, labels, threshold=0.5):
     # first, apply sigmoid on predictions which are of shape (batch_size, num_labels)
