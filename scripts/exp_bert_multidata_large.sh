@@ -22,6 +22,7 @@ for DS in "${DATASETS[@]}"; do
             --max_train_samples ${SIZE} \
             --num_train_epochs ${EPOCHS} \
             --num_labels ${NLABELS} \
+            --learning_rate 2e-4 \
             --hierarchical True \
             --max_segments 64 \
             --max_segment_length 128 \

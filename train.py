@@ -567,6 +567,8 @@ def main():
             
         # Apply truncation if needed
         if max_train_samples < len(train_dataset):
+            # Shuffle first to ensure random subset, consistent with RAG experiment
+            train_dataset = train_dataset.shuffle(seed=training_args.seed)
             train_dataset = train_dataset.select(range(max_train_samples))
             logger.info(f"*** Training on a SUBSET of {max_train_samples} samples (Total available: {len(processed_datasets['train'])}) ***")
 

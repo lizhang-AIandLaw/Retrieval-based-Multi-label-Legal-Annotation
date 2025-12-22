@@ -11,6 +11,8 @@ Models used:
 
 - `nlpaueb/legal-bert-base-uncased`
 - `Qwen/Qwen3-Embedding-0.6B`
+- `Qwen/Qwen3-Embedding-4B`
+- `Qwen/Qwen3-Embedding-8B`
 
 ## Project Structure
 
@@ -108,42 +110,46 @@ We also support a **Retrieval-Augmented Classification** approach (k-Nearest Nei
 
 This effectively treats the training set as an external memory, allowing for non-parametric classification which can be particularly effective in low-resource or zero-shot scenarios.
 
-### Data Efficiency Experiments
+### Advanced Data Efficiency Experiments (Scaling)
 
-We provide a comprehensive suite of scripts to evaluate model performance across different training set sizes (`[100, 500, 1000, 2000, 4500, 9000]`), comparing Training-Free RAG against Supervised Fine-Tuning.
+We conduct a rigorous comparison between **Training-Free RAG** and **Efficient Fine-Tuning** across multiple data scales (`100, 500, 1000, 2000, 4500, 9000` samples).
 
-**To run the Data Scaling Experiment:**
-
-```bash
-# 1. Run RAG Scaling (Fast, runs all sizes)
-./scripts/exp_rag_scaling.sh
-
-# 2. Run BERT Fine-tuning Scaling (Slow, requires GPU)
-# Run small sizes (100-1000) on GPU 0
-CUDA_VISIBLE_DEVICES=0 ./scripts/exp_bert_small.sh
-
-# Run large sizes (2000-9000) on GPU 1
-CUDA_VISIBLE_DEVICES=1 ./scripts/exp_bert_large.sh
-```
-
-**Caching & Resuming:**
-Encoding the entire dataset (especially with large models) can be time-consuming. The script automatically caches the computed embeddings to `./output/rag_results/cache/`. If you run the script again, it will load the embeddings from disk, skipping the encoding step.
-
-**Hyperparameter Search:**
-The performance of k-NN relies on choosing the optimal number of neighbors ($k$) and the decision threshold. We provide a grid search feature to automatically find the best configuration on the test set:
+**To run the Full Data Scaling Experiment on 4 GPUs:**
 
 ```bash
-# Run with grid search enabled
-python eval_rag.py \
-    --model_name_or_path "Qwen/Qwen3-Embedding-0.6B" \
-    --search_params True
+# GPU 0: BERT Large Scale (2000-9000 samples)
+./scripts/run_gpu0.sh
+
+# GPU 1: BERT Small Scale (100-1000 samples)
+./scripts/run_gpu1.sh
+
+# GPU 2: RAG 8B Scaling (All sizes)
+./scripts/run_gpu2.sh
+
+# GPU 3: RAG 0.6B + 4B Scaling (All sizes)
+./scripts/run_gpu3.sh
 ```
 
-To run the standard RAG evaluation with the base Qwen model (using default k=10):
+#### 1. Strict Fairness Protocol
+To ensure a fair comparison between methods, we enforce strict data consistency:
+- **Seed Control**: Both RAG and BERT experiments use `seed=42`.
+- **Subset Consistency**: The subset of 100 samples used for RAG is **identically** the same subset used for BERT fine-tuning (achieved by shuffling the full dataset with the same seed before slicing).
+- **Long Context**: Both methods are evaluated with `max_seq_length=8192`.
+    - **RAG**: Uses native long-context capabilities of Qwen3-Embedding.
+    - **BERT**: Uses Hierarchical Architecture (64 segments x 128 tokens) with LoRA.
 
-```bash
-./scripts/eval_rag_base_qwen.sh
-```
+#### 2. Training Strategy (Dynamic Epochs)
+For fine-tuning, we adapt the number of training epochs based on dataset size to balance convergence and overfitting:
+- **Small Data (<= 500)**: 20 Epochs (to maximize learning from limited data).
+- **Medium Data (1000)**: 10 Epochs.
+- **Large Data (>= 2000)**: 5 Epochs.
+
+#### 3. Cost Analysis (FLOPs Estimation)
+We estimate the computational cost to demonstrate the efficiency gap.
+- **Fine-Tuning FLOPs**: $C \approx 6 \times N_{params} \times S_{samples} \times E_{epochs} \times L_{seq}$
+- **RAG Inference FLOPs**: $C \approx 2 \times N_{params} \times S_{test} \times L_{seq}$
+
+Even with LoRA, fine-tuning requires backpropagation through the full 8k context, resulting in FLOPs typically **2-3 orders of magnitude higher** than the RAG approach.
 
 ## Inference
 
