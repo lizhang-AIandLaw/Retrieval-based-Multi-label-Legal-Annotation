@@ -14,7 +14,7 @@ for DS in "${DATASETS[@]}"; do
         --dataset_name "coastalcph/lex_glue" \
         --dataset_config_name "${DS}" \
         --data_sizes "${SIZES}" \
-        --output_dir "./output/data_scaling_results_0.6b_8k" \
+        --output_dir "./output/data_scaling_results_0.6b_8k_linear_probe" \
         --max_seq_length 8192 \
         --batch_size 16 \
         --tune_params True \
