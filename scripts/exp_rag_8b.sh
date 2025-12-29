@@ -1,7 +1,7 @@
 #!/bin/bash
 # Terminal 3: RAG 8B (8192 Length) - Updated for Tuning & Linear Probe
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 # Prioritize ecthr_b
 DATASETS=("ecthr_a" "ecthr_b" "eurlex")
