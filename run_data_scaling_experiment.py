@@ -11,6 +11,9 @@ from tqdm import tqdm
 from datasets import load_dataset
 from transformers import AutoModel, AutoTokenizer, HfArgumentParser
 from sklearn.metrics import f1_score
+from sklearn.linear_model import LogisticRegression
+from sklearn.multiclass import OneVsRestClassifier
+from sklearn.preprocessing import MultiLabelBinarizer
 
 # Configure logging
 logging.basicConfig(
@@ -52,11 +55,11 @@ class ExpConfig:
     )
     k: int = field(
         default=10,
-        metadata={"help": "k for k-NN."}
+        metadata={"help": "Default k for k-NN (if not tuning)."}
     )
     threshold: float = field(
         default=0.4,
-        metadata={"help": "Threshold for multi-label classification."}
+        metadata={"help": "Default threshold for multi-label classification (if not tuning)."}
     )
     bf16: bool = field(
         default=True,
@@ -65,6 +68,14 @@ class ExpConfig:
     seed: int = field(
         default=42,
         metadata={"help": "Random seed for data sampling."}
+    )
+    tune_params: bool = field(
+        default=False,
+        metadata={"help": "Whether to tune k and threshold on the validation set."}
+    )
+    use_linear_probe: bool = field(
+        default=False,
+        metadata={"help": "Whether to also evaluate using a Linear Probe (Logistic Regression)."}
     )
 
 def encode_dataset(model, tokenizer, dataset, max_length, batch_size, device):
@@ -101,12 +112,11 @@ def encode_dataset(model, tokenizer, dataset, max_length, batch_size, device):
             
     return np.vstack(all_embeddings)
 
-def run_rag_eval(train_embeddings, train_labels, test_embeddings, test_labels, k, threshold):
+def run_rag_eval(train_embeddings, train_labels, test_embeddings, test_labels, k, threshold, num_classes=10):
     """
     Run k-NN retrieval and evaluation.
     """
     num_test = test_embeddings.shape[0]
-    num_classes = 10 # Hardcoded for ecthr_a for now, ideally dynamic
     
     y_pred = []
     y_true = []
@@ -123,10 +133,12 @@ def run_rag_eval(train_embeddings, train_labels, test_embeddings, test_labels, k
         
         # Top-k indices: (chunk, k)
         # argpartition is faster than argsort for Top-k
-        top_k_indices = np.argpartition(sims, -k, axis=1)[:, -k:]
-        
-        # We need sorted scores for weighting? Actually simple sum is robust enough or simple weight
-        # Let's do simple sum of labels weighted by similarity
+        if k >= train_embeddings.shape[0]:
+            k_eff = train_embeddings.shape[0]
+        else:
+            k_eff = k
+            
+        top_k_indices = np.argpartition(sims, -k_eff, axis=1)[:, -k_eff:]
         
         batch_preds = np.zeros((end_idx - i, num_classes))
         
@@ -142,10 +154,7 @@ def run_rag_eval(train_embeddings, train_labels, test_embeddings, test_labels, k
                 for label in labels:
                     batch_preds[r, label] += weight
             
-            # Normalize? Or just threshold raw sum?
-            # Standard: prob = sum(weights * label) / sum(weights)
-            # But here sum(weights) varies. 
-            # Let's normalize by sum of weights (Top-k sum)
+            # Normalize by total weight (Top-k sum)
             total_weight = np.sum(scores[scores > 0]) + 1e-9
             batch_preds[r] /= total_weight
             
@@ -176,6 +185,59 @@ def run_rag_eval(train_embeddings, train_labels, test_embeddings, test_labels, k
     
     return micro, macro
 
+def tune_rag_params(train_embeddings, train_labels, val_embeddings, val_labels, num_classes):
+    """
+    Grid search for best k and threshold using validation set.
+    """
+    k_values = [5, 10, 20, 50]
+    thresholds = [0.2, 0.3, 0.4, 0.5]
+    
+    best_micro = -1
+    best_k = 10
+    best_thresh = 0.4
+    
+    logger.info("Tuning Hyperparameters on Validation Set...")
+    
+    # Pre-compute similarity matrix once for Validation
+    # Caution: If Val and Train are HUGE, this might OOM. 
+    # But for tuning we usually use full train? 
+    # For speed, let's just loop.
+    
+    for k in k_values:
+        for t in thresholds:
+            micro, macro = run_rag_eval(train_embeddings, train_labels, val_embeddings, val_labels, k, t, num_classes)
+            if micro > best_micro:
+                best_micro = micro
+                best_k = k
+                best_thresh = t
+                
+    logger.info(f"Best Params Found: k={best_k}, threshold={best_thresh} (Val Micro-F1: {best_micro:.4f})")
+    return best_k, best_thresh
+
+def run_linear_probe(train_embeddings, train_labels, test_embeddings, test_labels, num_classes):
+    """
+    Train a Logistic Regression (OneVsRest) classifier.
+    """
+    logger.info("Training Linear Probe (Logistic Regression)...")
+    
+    # Convert labels to Multi-Hot
+    mlb = MultiLabelBinarizer(classes=range(num_classes))
+    y_train = mlb.fit_transform(train_labels)
+    y_test = mlb.transform(test_labels)
+    
+    # Train
+    # C=10.0 usually good for normalized embeddings (cosine-like)
+    clf = OneVsRestClassifier(LogisticRegression(solver='liblinear', C=10.0, max_iter=1000, random_state=42))
+    clf.fit(train_embeddings, y_train)
+    
+    # Predict
+    y_pred = clf.predict(test_embeddings)
+    
+    micro = f1_score(y_test, y_pred, average='micro')
+    macro = f1_score(y_test, y_pred, average='macro')
+    
+    return micro, macro
+
 def main():
     parser = HfArgumentParser((ExpConfig,))
     config = parser.parse_args_into_dataclasses()[0]
@@ -188,8 +250,16 @@ def main():
     # Load Data
     dataset = load_dataset(config.dataset_name, config.dataset_config_name)
     full_train_set = dataset["train"]
-    test_set = dataset["test"] # or validation
+    validation_set = dataset["validation"]
+    test_set = dataset["test"]
     
+    # Determine num_classes
+    # ecthr_a/b: 10 labels, eurlex: 100 labels (127 actually, but used 100 in many papers? No, LexGlue uses full label set usually)
+    # Check max label index
+    all_labels = [l for ex in full_train_set for l in ex["labels"]]
+    num_classes = max(all_labels) + 1
+    logger.info(f"Detected Number of Classes: {num_classes}")
+
     # Load Model
     logger.info(f"Loading Model: {config.model_name_or_path}")
     tokenizer = AutoTokenizer.from_pretrained(config.model_name_or_path, trust_remote_code=True)
@@ -199,76 +269,99 @@ def main():
     model = AutoModel.from_pretrained(
         config.model_name_or_path, 
         trust_remote_code=True,
-        torch_dtype=torch.bfloat16 if config.bf16 else torch.float32
+        torch_dtype=torch.bfloat16 if config.bf16 else torch.float32,
+        attn_implementation="flash_attention_2"
     ).to(device)
     
-    # 1. Encode Test Set (Once)
+    # 1. Encode Test Set & Val Set (Once)
     logger.info("Encoding Test Set...")
     test_embeddings = encode_dataset(model, tokenizer, test_set, config.max_seq_length, config.batch_size, device)
     test_labels = [ex["labels"] for ex in test_set]
+
+    if config.tune_params:
+        logger.info("Encoding Validation Set...")
+        val_embeddings = encode_dataset(model, tokenizer, validation_set, config.max_seq_length, config.batch_size, device)
+        val_labels = [ex["labels"] for ex in validation_set]
     
-    # 2. Parse Data Sizes or Ratios
+    # 2. Parse Data Sizes
     raw_inputs = config.data_sizes.split(",")
     sizes = []
-    
     for s in raw_inputs:
         val = float(s)
         if val <= 1.0 and val > 0:
-            # It's a ratio
             size = int(len(full_train_set) * val)
             if size == 0: size = 1
             sizes.append(size)
         else:
-            # It's an absolute number
             sizes.append(int(val))
-
-    # Ensure sizes don't exceed dataset
     sizes = [s for s in sizes if s <= len(full_train_set)]
     if len(full_train_set) not in sizes:
-        sizes.append(len(full_train_set)) # Always run full set
+        sizes.append(len(full_train_set))
     sizes = sorted(list(set(sizes)))
     
     logger.info(f"Running experiments for sizes: {sizes}")
     
     results = []
     
-    # 3. Main Loop
-    # Optimization: Encode full train set once, then slice embeddings?
-    # Yes! That saves huge time.
-    logger.info("Encoding Full Training Set (for slicing)...")
+    # 3. Encode Full Train Set
+    logger.info("Encoding Full Training Set...")
     full_train_embeddings = encode_dataset(model, tokenizer, full_train_set, config.max_seq_length, config.batch_size, device)
     full_train_labels = [ex["labels"] for ex in full_train_set]
     
-    # Set seed for reproducibility of shuffling
+    # Random Permutation
     np.random.seed(config.seed)
-    # Generate a random permutation of indices
     permuted_indices = np.random.permutation(len(full_train_set))
     
     for size in sizes:
         logger.info(f"--- Evaluating Size: {size} ---")
         
-        # Slice the pre-computed embeddings
-        # We select the first 'size' indices from the permutation to simulate random sampling
         subset_indices = permuted_indices[:size]
-        
         train_emb_subset = full_train_embeddings[subset_indices]
         train_lbl_subset = [full_train_labels[i] for i in subset_indices]
         
-        micro, macro = run_rag_eval(
+        # --- Tune Params (Optional) ---
+        current_k = config.k
+        current_thresh = config.threshold
+        
+        if config.tune_params:
+            best_k, best_t = tune_rag_params(train_emb_subset, train_lbl_subset, val_embeddings, val_labels, num_classes)
+            current_k = best_k
+            current_thresh = best_t
+            
+        # --- Run RAG ---
+        micro_rag, macro_rag = run_rag_eval(
             train_emb_subset, 
             train_lbl_subset, 
             test_embeddings, 
             test_labels, 
-            config.k, 
-            config.threshold
+            current_k, 
+            current_thresh,
+            num_classes
         )
+        logger.info(f"[RAG] Size {size}: Micro={micro_rag:.4f}, Macro={macro_rag:.4f} (k={current_k}, t={current_thresh})")
         
-        logger.info(f"Size {size}: Micro={micro:.4f}, Macro={macro:.4f}")
-        results.append({
+        entry = {
             "train_size": size,
-            "micro_f1": micro,
-            "macro_f1": macro
-        })
+            "rag_micro_f1": micro_rag,
+            "rag_macro_f1": macro_rag,
+            "rag_best_k": current_k,
+            "rag_best_t": current_thresh
+        }
+        
+        # --- Run Linear Probe (Optional) ---
+        if config.use_linear_probe:
+            micro_lp, macro_lp = run_linear_probe(
+                train_emb_subset,
+                train_lbl_subset,
+                test_embeddings,
+                test_labels,
+                num_classes
+            )
+            logger.info(f"[LinearProbe] Size {size}: Micro={micro_lp:.4f}, Macro={macro_lp:.4f}")
+            entry["lp_micro_f1"] = micro_lp
+            entry["lp_macro_f1"] = macro_lp
+            
+        results.append(entry)
         
     # 4. Save Results
     df = pd.DataFrame(results)
@@ -279,4 +372,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

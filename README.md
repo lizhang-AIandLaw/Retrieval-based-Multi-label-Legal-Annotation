@@ -103,6 +103,7 @@ This script sequentially runs evaluation for all 8 configurations (Standard/Hier
 ## RAG for Classification (k-NN)
 
 We also support a **Retrieval-Augmented Classification** approach (k-Nearest Neighbors). Instead of training a classifier head, this method:
+
 1. Encodes the entire **Training Set** into a vector store (Knowledge Base).
 2. Encodes each **Test Document** (Query).
 3. Retrieves the top-$k$ most similar training documents.
@@ -131,25 +132,45 @@ We conduct a rigorous comparison between **Training-Free RAG** and **Efficient F
 ```
 
 #### 1. Strict Fairness Protocol
+
 To ensure a fair comparison between methods, we enforce strict data consistency:
+
 - **Seed Control**: Both RAG and BERT experiments use `seed=42`.
 - **Subset Consistency**: The subset of 100 samples used for RAG is **identically** the same subset used for BERT fine-tuning (achieved by shuffling the full dataset with the same seed before slicing).
 - **Long Context**: Both methods are evaluated with `max_seq_length=8192`.
-    - **RAG**: Uses native long-context capabilities of Qwen3-Embedding.
-    - **BERT**: Uses Hierarchical Architecture (64 segments x 128 tokens) with LoRA.
+  - **RAG**: Uses native long-context capabilities of Qwen3-Embedding.
+  - **BERT**: Uses Hierarchical Architecture (64 segments x 128 tokens) with LoRA.
 
 #### 2. Training Strategy (Dynamic Epochs)
+
 For fine-tuning, we adapt the number of training epochs based on dataset size to balance convergence and overfitting:
+
 - **Small Data (<= 500)**: 20 Epochs (to maximize learning from limited data).
 - **Medium Data (1000)**: 10 Epochs.
 - **Large Data (>= 2000)**: 5 Epochs.
 
 #### 3. Cost Analysis (FLOPs Estimation)
-We estimate the computational cost to demonstrate the efficiency gap.
-- **Fine-Tuning FLOPs**: $C \approx 6 \times N_{params} \times S_{samples} \times E_{epochs} \times L_{seq}$
-- **RAG Inference FLOPs**: $C \approx 2 \times N_{params} \times S_{test} \times L_{seq}$
 
-Even with LoRA, fine-tuning requires backpropagation through the full 8k context, resulting in FLOPs typically **2-3 orders of magnitude higher** than the RAG approach.
+We estimate the computational cost to demonstrate the efficiency gap.
+
+**Assumptions for Calculation:**
+
+- **Model**: Hierarchical Legal-BERT (~116M params total).
+- **Sequence Length**: 8192 tokens.
+- **Training**: 2000 samples $\times$ 5 epochs.
+- **Inference (RAG)**: 1000 test samples.
+
+| Method                         | FLOPs (Est.)                     | Relative Cost  | Memory (Optimizer States) |
+| :----------------------------- | :------------------------------- | :------------- | :------------------------ |
+| **RAG (Inference Only)** | **1.9e15** (1.9 PetaFLOPs) | **1x**   | **0 MB**            |
+| **LoRA Fine-tuning**     | **3.8e16** (38 PetaFLOPs)  | **~20x** | ~50 MB                    |
+| **Full Fine-tuning**     | **5.7e16** (57 PetaFLOPs)  | **~30x** | ~928 MB                   |
+
+**Key Insight:**
+Even with LoRA, fine-tuning requires backpropagation through the full 8k context, resulting in FLOPs typically **20-30 times higher** than the RAG approach. Furthermore, RAG requires **zero training memory**, making it deploying on commodity hardware much easier.
+
+- **Fine-Tuning FLOPs Formula**: $C \approx 6 \times N_{params} \times S_{samples} \times E_{epochs} \times L_{seq}$
+- **RAG Inference FLOPs Formula**: $C \approx 2 \times N_{params} \times S_{test} \times L_{seq}$
 
 ## Inference
 
@@ -172,19 +193,20 @@ The models are guided to output labels 0-9 using a **Classification Head** and *
 
 We observed distinct memory behaviors between Standard Classification (SFT) and Embedding Fine-Tuning. Here is a comparison of the technical configurations required to run these experiments on standard hardware (e.g., A10 24GB vs. A100 40GB):
 
-| Feature | Standard SFT (e.g., Qwen-0.6B) | Embedding Fine-Tuning | Impact on Memory |
-| :--- | :--- | :--- | :--- |
-| **Loss Function** | Cross Entropy (BCE) | InfoNCE (Contrastive) | Embedding requires storing activations for pairs (Anchor + Positive), effectively **doubling** sequence memory usage. |
-| **Input Structure** | Single Sequence | Pairs (Anchor, Positive) | Contrastive learning necessitates processing two distinct sequences per sample. |
-| **Max Sequence Length** | 2048 - 8192 | 2048 - 8192 | Memory usage grows quadratically ($O(L^2)$) with length. 8192 is significantly more demanding than 2048. |
-| **Gradient Checkpointing** | **Enabled** | **Enabled** (Critical) | Essential for long sequences. Trades compute for memory (re-computes activations during backward pass). **Required** for Qwen @ 2048+ length on A100. |
-| **Batch Size Strategy** | Can be 1 (with Accumulation) | **Must be > 1** | Contrastive loss needs in-batch negatives. If Batch Size=1, the model cannot learn from negatives. |
+| Feature                          | Standard SFT (e.g., Qwen-0.6B) | Embedding Fine-Tuning        | Impact on Memory                                                                                                                                           |
+| :------------------------------- | :----------------------------- | :--------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Loss Function**          | Cross Entropy (BCE)            | InfoNCE (Contrastive)        | Embedding requires storing activations for pairs (Anchor + Positive), effectively**doubling** sequence memory usage.                                 |
+| **Input Structure**        | Single Sequence                | Pairs (Anchor, Positive)     | Contrastive learning necessitates processing two distinct sequences per sample.                                                                            |
+| **Max Sequence Length**    | 2048 - 8192                    | 2048 - 8192                  | Memory usage grows quadratically ($O(L^2)$) with length. 8192 is significantly more demanding than 2048.                                                 |
+| **Gradient Checkpointing** | **Enabled**              | **Enabled** (Critical) | Essential for long sequences. Trades compute for memory (re-computes activations during backward pass).**Required** for Qwen @ 2048+ length on A100. |
+| **Batch Size Strategy**    | Can be 1 (with Accumulation)   | **Must be > 1**        | Contrastive loss needs in-batch negatives. If Batch Size=1, the model cannot learn from negatives.                                                         |
 
 **Key Takeaway for Embedding Fine-Tuning:**
 To fine-tune embeddings with long contexts (2048+) on GPUs:
-1.  **Gradient Checkpointing** is mandatory.
-2.  **Flash Attention 2** is mandatory.
-3.  **Batch Size** is constrained by memory but must be at least 2 (per GPU) for contrastive learning to be effective.
+
+1. **Gradient Checkpointing** is mandatory.
+2. **Flash Attention 2** is mandatory.
+3. **Batch Size** is constrained by memory but must be at least 2 (per GPU) for contrastive learning to be effective.
 
 ## Notes on Input Strategies
 

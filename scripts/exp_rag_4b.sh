@@ -1,9 +1,10 @@
 #!/bin/bash
-# Terminal 2: RAG 4B (8192 Length)
+# Terminal 2: RAG 4B (8192 Length) - Updated for Tuning & Linear Probe
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
-DATASETS=("ecthr_a" "ecthr_b" "eurlex")
+# Prioritize ecthr_b
+DATASETS=("ecthr_b" "ecthr_a" "eurlex")
 SIZES="100,500,1000,2000,4500,9000"
 
 for DS in "${DATASETS[@]}"; do
@@ -16,7 +17,7 @@ for DS in "${DATASETS[@]}"; do
         --output_dir "./output/data_scaling_results_4b_8k" \
         --max_seq_length 8192 \
         --batch_size 2 \
-        --k 10 \
-        --threshold 0.4 \
+        --tune_params True \
+        --use_linear_probe True \
         --bf16 true
 done
