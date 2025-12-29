@@ -2,7 +2,7 @@
 # Terminal 6: Hierarchical BERT (All Data) - Fixed 3 Epochs
 # To test if fewer epochs (underfitting) hurts small data performance
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-export CUDA_VISIBLE_DEVICES=2
+export CUDA_VISIBLE_DEVICES=1
 
 DATASETS=("ecthr_a" "ecthr_b" "eurlex")
 SIZES=(100 500 1000 2000 4500 9000)
