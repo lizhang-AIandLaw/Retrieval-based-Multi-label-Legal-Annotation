@@ -4,7 +4,7 @@ export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_VISIBLE_DEVICES=1
 
 # Prioritize ecthr_b
-DATASETS=("ecthr_b" "ecthr_a" "eurlex")
+DATASETS=("ecthr_a" "ecthr_b"  "eurlex")
 SIZES="100,500,1000,2000,4500,9000"
 
 for DS in "${DATASETS[@]}"; do
