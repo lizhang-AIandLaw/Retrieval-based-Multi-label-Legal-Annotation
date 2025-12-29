@@ -14,6 +14,7 @@ from sklearn.metrics import f1_score
 from sklearn.linear_model import LogisticRegression
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import MultiLabelBinarizer
+from sklearn.neighbors import NearestCentroid
 
 # Configure logging
 logging.basicConfig(
@@ -77,8 +78,21 @@ class ExpConfig:
         default=False,
         metadata={"help": "Whether to also evaluate using a Linear Probe (Logistic Regression)."}
     )
+    use_ncc: bool = field(
+        default=False,
+        metadata={"help": "Whether to also evaluate using Nearest Class Center (NCC)."}
+    )
+    cache_embeddings: bool = field(
+        default=True,
+        metadata={"help": "Whether to cache embeddings to disk to speed up re-runs."}
+    )
 
-def encode_dataset(model, tokenizer, dataset, max_length, batch_size, device):
+def encode_dataset(model, tokenizer, dataset, max_length, batch_size, device, cache_path=None):
+    # Check cache
+    if cache_path and os.path.exists(cache_path):
+        logger.info(f"Loading cached embeddings from {cache_path}")
+        return np.load(cache_path)
+
     model.eval()
     all_embeddings = []
     
@@ -109,8 +123,16 @@ def encode_dataset(model, tokenizer, dataset, max_length, batch_size, device):
                 
             embeddings = torch.nn.functional.normalize(embeddings, p=2, dim=1)
             all_embeddings.append(embeddings.float().cpu().numpy())
-            
-    return np.vstack(all_embeddings)
+    
+    embeddings = np.vstack(all_embeddings)
+    
+    # Save cache
+    if cache_path:
+        os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+        np.save(cache_path, embeddings)
+        logger.info(f"Saved embeddings to {cache_path}")
+        
+    return embeddings
 
 def run_rag_eval(train_embeddings, train_labels, test_embeddings, test_labels, k, threshold, num_classes=10):
     """
@@ -238,6 +260,60 @@ def run_linear_probe(train_embeddings, train_labels, test_embeddings, test_label
     
     return micro, macro
 
+def run_ncc(train_embeddings, train_labels, test_embeddings, test_labels, num_classes):
+    """
+    Train a Nearest Class Center (NCC) classifier adapted for Multi-Label.
+    Strategy: 
+    1. Compute Centroid for each class (using all samples belonging to that class).
+    2. For test sample, calculate similarity to all centroids.
+    3. Apply threshold to similarities to predict labels.
+    """
+    logger.info("Running Nearest Class Center (NCC)...")
+    
+    # 1. Compute Centroids
+    centroids = np.zeros((num_classes, train_embeddings.shape[1]))
+    class_counts = np.zeros(num_classes)
+    
+    for emb, labels in zip(train_embeddings, train_labels):
+        for label in labels:
+            centroids[label] += emb
+            class_counts[label] += 1
+            
+    # Normalize centroids
+    for c in range(num_classes):
+        if class_counts[c] > 0:
+            centroids[c] /= class_counts[c]
+        # Else: centroid remains zero (or could handle differently)
+        
+    # Normalize centroid vectors to unit length for cosine similarity
+    centroids = torch.tensor(centroids)
+    centroids = torch.nn.functional.normalize(centroids, p=2, dim=1).numpy()
+    
+    # 2. Predict
+    # Sim: (test_size, num_classes)
+    sims = np.dot(test_embeddings, centroids.T)
+    
+    # 3. Threshold (Simple fixed threshold for now, or use tuned one?)
+    # Let's use a default threshold of 0.4 or similar to RAG
+    threshold = 0.4 # Could be tuned
+    
+    binary_preds = (sims > threshold).astype(int)
+    
+    # Fallback
+    for r in range(len(binary_preds)):
+        if binary_preds[r].sum() == 0:
+            top_c = np.argmax(sims[r])
+            binary_preds[r, top_c] = 1
+            
+    # Convert true labels
+    mlb = MultiLabelBinarizer(classes=range(num_classes))
+    y_true = mlb.fit_transform(test_labels)
+    
+    micro = f1_score(y_true, binary_preds, average='micro')
+    macro = f1_score(y_true, binary_preds, average='macro')
+    
+    return micro, macro
+
 def main():
     parser = HfArgumentParser((ExpConfig,))
     config = parser.parse_args_into_dataclasses()[0]
@@ -273,14 +349,24 @@ def main():
         attn_implementation="flash_attention_2"
     ).to(device)
     
+    # Define cache paths
+    # Use model name safe string
+    model_safe_name = config.model_name_or_path.replace("/", "_")
+    ds_name = config.dataset_config_name
+    cache_dir = "./embeddings_cache"
+    
+    test_cache = f"{cache_dir}/{model_safe_name}_{ds_name}_test.npy"
+    val_cache = f"{cache_dir}/{model_safe_name}_{ds_name}_val.npy"
+    train_cache = f"{cache_dir}/{model_safe_name}_{ds_name}_train.npy"
+    
     # 1. Encode Test Set & Val Set (Once)
     logger.info("Encoding Test Set...")
-    test_embeddings = encode_dataset(model, tokenizer, test_set, config.max_seq_length, config.batch_size, device)
+    test_embeddings = encode_dataset(model, tokenizer, test_set, config.max_seq_length, config.batch_size, device, cache_path=test_cache if config.cache_embeddings else None)
     test_labels = [ex["labels"] for ex in test_set]
 
     if config.tune_params:
         logger.info("Encoding Validation Set...")
-        val_embeddings = encode_dataset(model, tokenizer, validation_set, config.max_seq_length, config.batch_size, device)
+        val_embeddings = encode_dataset(model, tokenizer, validation_set, config.max_seq_length, config.batch_size, device, cache_path=val_cache if config.cache_embeddings else None)
         val_labels = [ex["labels"] for ex in validation_set]
     
     # 2. Parse Data Sizes
@@ -305,7 +391,7 @@ def main():
     
     # 3. Encode Full Train Set
     logger.info("Encoding Full Training Set...")
-    full_train_embeddings = encode_dataset(model, tokenizer, full_train_set, config.max_seq_length, config.batch_size, device)
+    full_train_embeddings = encode_dataset(model, tokenizer, full_train_set, config.max_seq_length, config.batch_size, device, cache_path=train_cache if config.cache_embeddings else None)
     full_train_labels = [ex["labels"] for ex in full_train_set]
     
     # Random Permutation
@@ -360,6 +446,19 @@ def main():
             logger.info(f"[LinearProbe] Size {size}: Micro={micro_lp:.4f}, Macro={macro_lp:.4f}")
             entry["lp_micro_f1"] = micro_lp
             entry["lp_macro_f1"] = macro_lp
+        
+        # --- Run NCC (Optional) ---
+        if config.use_ncc:
+            micro_ncc, macro_ncc = run_ncc(
+                train_emb_subset,
+                train_lbl_subset,
+                test_embeddings,
+                test_labels,
+                num_classes
+            )
+            logger.info(f"[NCC] Size {size}: Micro={micro_ncc:.4f}, Macro={macro_ncc:.4f}")
+            entry["ncc_micro_f1"] = micro_ncc
+            entry["ncc_macro_f1"] = macro_ncc
             
         results.append(entry)
         
