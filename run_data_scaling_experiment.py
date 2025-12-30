@@ -6,7 +6,7 @@ import torch
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Optional, Union
 from tqdm import tqdm
 from datasets import load_dataset
 from transformers import AutoModel, AutoTokenizer, HfArgumentParser
@@ -88,6 +88,23 @@ class ExpConfig:
         metadata={"help": "Whether to cache embeddings to disk to speed up re-runs."}
     )
 
+def normalize_labels(example):
+    """
+    Ensure labels are always a list of integers.
+    Handle both Multi-label (list) and Single-label (int) datasets.
+    """
+    # Check for 'labels' (standard) or 'label' (common in GLUE/scotus sometimes)
+    if "labels" in example:
+        lbl = example["labels"]
+    elif "label" in example:
+        lbl = example["label"]
+    else:
+        raise ValueError("Could not find 'labels' or 'label' field in dataset example.")
+        
+    if isinstance(lbl, int):
+        return {"labels": [lbl]}
+    return {"labels": lbl}
+
 def encode_dataset(model, tokenizer, dataset, max_length, batch_size, device, cache_path=None):
     # Check cache
     if cache_path and os.path.exists(cache_path):
@@ -99,7 +116,13 @@ def encode_dataset(model, tokenizer, dataset, max_length, batch_size, device, ca
     
     # Process text in batches
     # ecthr_a 'text' is list of strings, join them
-    texts = [" ".join(ex["text"]) for ex in dataset]
+    # scotus 'text' might be single string? Handle both.
+    texts = []
+    for ex in dataset:
+        if isinstance(ex["text"], list):
+            texts.append(" ".join(ex["text"]))
+        else:
+            texts.append(ex["text"])
     
     for i in tqdm(range(0, len(texts), batch_size), desc="Encoding", leave=False):
         batch_texts = texts[i : i + batch_size]
@@ -297,12 +320,19 @@ def main():
     
     # Load Data
     dataset = load_dataset(config.dataset_name, config.dataset_config_name)
+    
+    # Normalize Label Format (List of ints)
+    # Map all splits to standardized format
+    for split in dataset.keys():
+        dataset[split] = dataset[split].map(normalize_labels, load_from_cache_file=False)
+    
     full_train_set = dataset["train"]
     validation_set = dataset["validation"]
     test_set = dataset["test"]
     
     # Determine num_classes
     # ecthr_a/b: 10 labels, eurlex: 100 labels (127 actually, but used 100 in many papers? No, LexGlue uses full label set usually)
+    # scotus: 14 labels (single label)
     # Check max label index
     all_labels = [l for ex in full_train_set for l in ex["labels"]]
     num_classes = max(all_labels) + 1
