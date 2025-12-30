@@ -12,9 +12,10 @@ from datasets import load_dataset
 from transformers import AutoModel, AutoTokenizer, HfArgumentParser
 from sklearn.metrics import f1_score
 from sklearn.linear_model import LogisticRegression
+from sklearn.svm import LinearSVC
 from sklearn.multiclass import OneVsRestClassifier
 from sklearn.preprocessing import MultiLabelBinarizer
-from sklearn.neighbors import NearestCentroid
+from sklearn.calibration import CalibratedClassifierCV
 
 # Configure logging
 logging.basicConfig(
@@ -78,9 +79,9 @@ class ExpConfig:
         default=False,
         metadata={"help": "Whether to also evaluate using a Linear Probe (Logistic Regression)."}
     )
-    use_ncc: bool = field(
+    use_svm: bool = field(
         default=False,
-        metadata={"help": "Whether to also evaluate using Nearest Class Center (NCC)."}
+        metadata={"help": "Whether to also evaluate using SVM (LinearSVC)."}
     )
     cache_embeddings: bool = field(
         default=True,
@@ -260,57 +261,28 @@ def run_linear_probe(train_embeddings, train_labels, test_embeddings, test_label
     
     return micro, macro
 
-def run_ncc(train_embeddings, train_labels, test_embeddings, test_labels, num_classes):
+def run_svm(train_embeddings, train_labels, test_embeddings, test_labels, num_classes):
     """
-    Train a Nearest Class Center (NCC) classifier adapted for Multi-Label.
-    Strategy: 
-    1. Compute Centroid for each class (using all samples belonging to that class).
-    2. For test sample, calculate similarity to all centroids.
-    3. Apply threshold to similarities to predict labels.
+    Train a SVM (LinearSVC) classifier adapted for Multi-Label.
+    LinearSVC typically works better for sparse/high-dim data than LogisticRegression.
     """
-    logger.info("Running Nearest Class Center (NCC)...")
+    logger.info("Running SVM (LinearSVC)...")
     
-    # 1. Compute Centroids
-    centroids = np.zeros((num_classes, train_embeddings.shape[1]))
-    class_counts = np.zeros(num_classes)
-    
-    for emb, labels in zip(train_embeddings, train_labels):
-        for label in labels:
-            centroids[label] += emb
-            class_counts[label] += 1
-            
-    # Normalize centroids
-    for c in range(num_classes):
-        if class_counts[c] > 0:
-            centroids[c] /= class_counts[c]
-        # Else: centroid remains zero (or could handle differently)
-        
-    # Normalize centroid vectors to unit length for cosine similarity
-    centroids = torch.tensor(centroids)
-    centroids = torch.nn.functional.normalize(centroids, p=2, dim=1).numpy()
-    
-    # 2. Predict
-    # Sim: (test_size, num_classes)
-    sims = np.dot(test_embeddings, centroids.T)
-    
-    # 3. Threshold (Simple fixed threshold for now, or use tuned one?)
-    # Let's use a default threshold of 0.4 or similar to RAG
-    threshold = 0.4 # Could be tuned
-    
-    binary_preds = (sims > threshold).astype(int)
-    
-    # Fallback
-    for r in range(len(binary_preds)):
-        if binary_preds[r].sum() == 0:
-            top_c = np.argmax(sims[r])
-            binary_preds[r, top_c] = 1
-            
-    # Convert true labels
     mlb = MultiLabelBinarizer(classes=range(num_classes))
-    y_true = mlb.fit_transform(test_labels)
+    y_train = mlb.fit_transform(train_labels)
+    y_test = mlb.transform(test_labels)
     
-    micro = f1_score(y_true, binary_preds, average='micro')
-    macro = f1_score(y_true, binary_preds, average='macro')
+    # Use OneVsRest with LinearSVC
+    # class_weight='balanced' can help with small classes
+    # CalibratedClassifierCV allows us to get probabilities if needed, but LinearSVC direct is faster
+    svc = LinearSVC(C=1.0, dual=False, max_iter=2000, class_weight='balanced', random_state=42)
+    clf = OneVsRestClassifier(svc)
+    
+    clf.fit(train_embeddings, y_train)
+    y_pred = clf.predict(test_embeddings)
+    
+    micro = f1_score(y_test, y_pred, average='micro')
+    macro = f1_score(y_test, y_pred, average='macro')
     
     return micro, macro
 
@@ -447,18 +419,18 @@ def main():
             entry["lp_micro_f1"] = micro_lp
             entry["lp_macro_f1"] = macro_lp
         
-        # --- Run NCC (Optional) ---
-        if config.use_ncc:
-            micro_ncc, macro_ncc = run_ncc(
+        # --- Run SVM (Optional) ---
+        if config.use_svm:
+            micro_svm, macro_svm = run_svm(
                 train_emb_subset,
                 train_lbl_subset,
                 test_embeddings,
                 test_labels,
                 num_classes
             )
-            logger.info(f"[NCC] Size {size}: Micro={micro_ncc:.4f}, Macro={macro_ncc:.4f}")
-            entry["ncc_micro_f1"] = micro_ncc
-            entry["ncc_macro_f1"] = macro_ncc
+            logger.info(f"[SVM] Size {size}: Micro={micro_svm:.4f}, Macro={macro_svm:.4f}")
+            entry["svm_micro_f1"] = micro_svm
+            entry["svm_macro_f1"] = macro_svm
             
         results.append(entry)
         

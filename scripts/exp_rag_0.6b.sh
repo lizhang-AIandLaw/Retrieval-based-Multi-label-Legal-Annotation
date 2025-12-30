@@ -1,5 +1,5 @@
 #!/bin/bash
-# Terminal 1: RAG 0.6B (8192 Length) - Updated for Tuning & Linear Probe & NCC
+# Terminal 1: RAG 0.6B (8192 Length) - Updated for Tuning & Linear Probe & SVM
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_VISIBLE_DEVICES=0
 
@@ -14,11 +14,11 @@ for DS in "${DATASETS[@]}"; do
         --dataset_name "coastalcph/lex_glue" \
         --dataset_config_name "${DS}" \
         --data_sizes "${SIZES}" \
-        --output_dir "./output/data_scaling_results_0.6b_8k_ncc" \
+        --output_dir "./output/data_scaling_results_0.6b_8k_svm" \
         --max_seq_length 8192 \
         --batch_size 16 \
         --tune_params True \
         --use_linear_probe True \
-        --use_ncc True \
+        --use_svm True \
         --bf16 true
 done
