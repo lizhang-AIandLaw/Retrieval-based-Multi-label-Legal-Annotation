@@ -4,7 +4,7 @@
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 # export CUDA_VISIBLE_DEVICES=0  <-- Set your GPU ID manually when running
 
-DATASETS=("ecthr_a" "ecthr_b" "eurlex")
+DATASETS=("ecthr_a" "ecthr_b" "eurlex" "scotus")
 SIZES=(100 500 1000 2000 4500 9000)
 
 for DS in "${DATASETS[@]}"; do
@@ -12,6 +12,7 @@ for DS in "${DATASETS[@]}"; do
     
     if [ "$DS" == "ecthr_a" ] || [ "$DS" == "ecthr_b" ]; then NLABELS=10; fi
     if [ "$DS" == "eurlex" ]; then NLABELS=100; fi
+    if [ "$DS" == "scotus" ]; then NLABELS=14; fi
     
     for SIZE in "${SIZES[@]}"; do
         echo ">>> Training BERT LoRA (LR=5e-5) on ${DS} with ${SIZE} samples..."
@@ -38,4 +39,3 @@ for DS in "${DATASETS[@]}"; do
             --overwrite_output_dir True
     done
 done
-
