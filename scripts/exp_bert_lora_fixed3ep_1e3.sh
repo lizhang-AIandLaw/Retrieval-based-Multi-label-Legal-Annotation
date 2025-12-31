@@ -2,7 +2,8 @@
 # Terminal: BERT LoRA Fixed 3 Epochs - High LR (1e-3)
 # Hypothesis: Might be best for small data/few epochs, but unstable for large data.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-# export CUDA_VISIBLE_DEVICES=2  <-- Set your GPU ID manually when running
+export CUDA_VISIBLE_DEVICES=1
+export HF_HOME="/ix/kashley/liz239/.cache/huggingface"
 
 DATASETS=("ecthr_a" "ecthr_b" "eurlex" "scotus")
 SIZES=(100 500 1000 2000 4500 9000)

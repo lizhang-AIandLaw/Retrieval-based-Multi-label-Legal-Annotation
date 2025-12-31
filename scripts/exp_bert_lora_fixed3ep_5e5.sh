@@ -2,7 +2,8 @@
 # Terminal: BERT LoRA Fixed 3 Epochs - Low LR (5e-5)
 # Hypothesis: Might be too slow to converge in just 3 epochs for small data.
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
-# export CUDA_VISIBLE_DEVICES=0  <-- Set your GPU ID manually when running
+export CUDA_VISIBLE_DEVICES=0
+export HF_HOME="/ix/kashley/liz239/.cache/huggingface"
 
 DATASETS=("ecthr_a" "ecthr_b" "eurlex" "scotus")
 SIZES=(100 500 1000 2000 4500 9000)

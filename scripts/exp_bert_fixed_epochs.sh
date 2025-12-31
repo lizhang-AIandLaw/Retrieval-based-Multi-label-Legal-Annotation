@@ -3,6 +3,8 @@
 # To test if fewer epochs (underfitting) hurts small data performance
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_VISIBLE_DEVICES=2
+export HF_HOME="/ix/kashley/liz239/.cache/huggingface"
+
 
 DATASETS=("ecthr_a" "ecthr_b" "eurlex" "scotus")
 SIZES=(100 500 1000 2000 4500 9000)

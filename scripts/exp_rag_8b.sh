@@ -2,6 +2,7 @@
 # Terminal 3: RAG 8B (8192 Length) - Updated for Tuning & Linear Probe & SVM
 export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
 export CUDA_VISIBLE_DEVICES=0
+export HF_HOME="/ix/kashley/liz239/.cache/huggingface"
 
 # Prioritize ecthr_a
 DATASETS=("ecthr_a" "ecthr_b" "eurlex")
